@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 
-// Register model if not already registered
 let Customer;
 try {
   Customer = mongoose.model('Customer');
@@ -11,15 +10,14 @@ try {
     name: String,
     customerId: String,
     monthlyFee: Number,
-    pendingDues: Number,
+    pendingDues: { type: Number, default: 0 },
     connectionDate: String,
-    status: String,
-    paymentStatus: String
+    status: { type: String, default: 'Active' },
+    paymentStatus: { type: String, default: 'Unpaid' }
   });
   Customer = mongoose.model('Customer', CustomerSchema);
 }
 
-// GET all customers
 router.get('/', async (req, res) => {
   try {
     const customers = await Customer.find().sort({ createdAt: -1 });
@@ -29,7 +27,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST new customer
 router.post('/', async (req, res) => {
   try {
     const customer = new Customer(req.body);
