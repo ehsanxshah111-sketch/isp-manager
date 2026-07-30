@@ -18,6 +18,7 @@ app.use(express.json());
 const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   email: { type: String, default: '' },
+  fullName: { type: String, default: '' },
   password: { type: String, required: true },
   role: { type: String, default: 'admin' }
 });
@@ -191,6 +192,29 @@ app.put('/api/auth/change-username', auth, async (req, res) => {
 
     const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ success: true, token, user });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Used by the "Edit Profile" popup (click your name, top-right) to update
+// display name (fullName) and email. Separate from change-username above.
+app.put('/api/auth/update', auth, async (req, res) => {
+  try {
+    const { fullName, email } = req.body;
+    if (!fullName || fullName.trim() === '') {
+      return res.status(400).json({ success: false, message: 'Name cannot be empty' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      { fullName: fullName.trim(), email: (email || '').trim() },
+      { new: true }
+    ).select('-password');
+
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    res.json({ success: true, user });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
