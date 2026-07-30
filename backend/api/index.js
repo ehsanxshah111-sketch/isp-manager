@@ -6,13 +6,49 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 dotenv.config();
-
 const app = express();
 
 // ===== MIDDLEWARE =====
-app.use(cors({ origin: '*', credentials: true, methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
-app.options('*', cors());
+app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json());
+
+// ===== MODELS =====
+const UserSchema = new mongoose.Schema({
+  username: String,
+  email: String,
+  password: String,
+  role: { type: String, default: 'user' }
+});
+const CustomerSchema = new mongoose.Schema({
+  name: String,
+  customerId: String,
+  monthlyFee: Number,
+  pendingDues: Number,
+  connectionDate: String,
+  status: String,
+  paymentStatus: String
+});
+const PaymentSchema = new mongoose.Schema({
+  customerId: String,
+  customerName: String,
+  amount: Number,
+  month: String,
+  year: String,
+  method: String,
+  status: String,
+  date: { type: Date, default: Date.now }
+});
+const ExpenseSchema = new mongoose.Schema({
+  description: String,
+  amount: Number,
+  category: String,
+  date: { type: Date, default: Date.now }
+});
+
+const User = mongoose.model('User', UserSchema);
+const Customer = mongoose.model('Customer', CustomerSchema);
+const Payment = mongoose.model('Payment', PaymentSchema);
+const Expense = mongoose.model('Expense', ExpenseSchema);
 
 // ===== DATABASE =====
 let cached = global.mongoose;
@@ -32,31 +68,12 @@ async function connectDB() {
   return cached.conn;
 }
 
-// ===== MODELS =====
-const UserSchema = new mongoose.Schema({ username: String, email: String, password: String, role: { type: String, default: 'user' } });
-const CustomerSchema = new mongoose.Schema({ name: String, customerId: String, monthlyFee: Number, pendingDues: Number, connectionDate: String, status: String, paymentStatus: String });
-const PaymentSchema = new mongoose.Schema({ customerId: String, customerName: String, amount: Number, month: String, year: String, method: String, status: String, date: { type: Date, default: Date.now } });
-const ExpenseSchema = new mongoose.Schema({ description: String, amount: Number, category: String, date: { type: Date, default: Date.now } });
-
-const User = mongoose.model('User', UserSchema);
-const Customer = mongoose.model('Customer', CustomerSchema);
-const Payment = mongoose.model('Payment', PaymentSchema);
-const Expense = mongoose.model('Expense', ExpenseSchema);
-
-// ===== ROUTES =====
-app.get('/api/health', (req, res) => { res.json({ status: 'OK', message: 'Server running on Vercel!' }); });
-
-app.get('/api/test-db', async (req, res) => {
-  try {
-    await connectDB();
-    const count = await User.countDocuments();
-    res.json({ connected: true, userCount: count, message: 'MongoDB is working!' });
-  } catch (error) {
-    res.status(500).json({ connected: false, error: error.message });
-  }
+// ===== HEALTH =====
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', message: 'Server running on Vercel!' });
 });
 
-// LOGIN
+// ===== LOGIN =====
 app.post('/api/auth/login', async (req, res) => {
   try {
     await connectDB();
@@ -65,23 +82,18 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user) return res.status(401).json({ message: 'User not found' });
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ message: 'Invalid password' });
-    const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET || 'secret', { expiresIn: '30d' });
+    const token = jwt.sign(
+      { id: user._id, username: user.username },
+      process.env.JWT_SECRET || 'secret',
+      { expiresIn: '30d' }
+    );
     res.json({ token, user: { id: user._id, username: user.username, email: user.email, role: user.role } });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
-app.get('/api/auth/me', async (req, res) => {
-  try {
-    await connectDB();
-    res.json({ user: { username: 'admin', email: 'admin@isp.com', role: 'admin' } });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// CUSTOMERS
+// ===== CUSTOMERS =====
 app.get('/api/customers', async (req, res) => {
   try {
     await connectDB();
@@ -125,7 +137,7 @@ app.delete('/api/customers/:id', async (req, res) => {
   }
 });
 
-// PAYMENTS
+// ===== PAYMENTS =====
 app.get('/api/payments', async (req, res) => {
   try {
     await connectDB();
@@ -147,7 +159,7 @@ app.post('/api/payments', async (req, res) => {
   }
 });
 
-// EXPENSES
+// ===== EXPENSES =====
 app.get('/api/expenses', async (req, res) => {
   try {
     await connectDB();
@@ -169,6 +181,9 @@ app.post('/api/expenses', async (req, res) => {
   }
 });
 
-app.use('*', (req, res) => { res.status(404).json({ message: 'Route not found' }); });
+// ===== 404 =====
+app.use('*', (req, res) => {
+  res.status(404).json({ message: 'Route not found' });
+});
 
 module.exports = app;
