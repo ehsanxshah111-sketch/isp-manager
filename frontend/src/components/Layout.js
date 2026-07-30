@@ -14,6 +14,7 @@ const Layout = () => {
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [uploadingPicture, setUploadingPicture] = useState(false);
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -26,14 +27,10 @@ const Layout = () => {
       document.body.classList.add('dark-mode');
     }
 
-    const savedPic = localStorage.getItem('profilePicture');
-    if (savedPic) {
-      setProfilePicture(savedPic);
-    }
-
     if (user) {
       setEditName(user.fullName || user.username || '');
       setEditEmail(user.email || '');
+      setProfilePicture(user.profilePicture || '');
     }
   }, [user]);
 
@@ -72,20 +69,40 @@ const Layout = () => {
     }
 
     const reader = new FileReader();
-    reader.onloadend = () => {
+    reader.onloadend = async () => {
       const base64String = reader.result;
-      setProfilePicture(base64String);
-      localStorage.setItem('profilePicture', base64String);
-      setShowUploadModal(false);
-      toast.success('Profile picture updated!');
+      setUploadingPicture(true);
+      try {
+        const res = await API.put('/auth/profile-picture', {
+          profilePicture: base64String
+        });
+        if (res.data.success) {
+          setProfilePicture(base64String);
+          setShowUploadModal(false);
+          toast.success('Profile picture updated!');
+        }
+      } catch (error) {
+        toast.error(error.response?.data?.message || 'Failed to upload profile picture');
+      } finally {
+        setUploadingPicture(false);
+      }
     };
     reader.readAsDataURL(file);
   };
 
-  const removeProfilePicture = () => {
-    setProfilePicture('');
-    localStorage.removeItem('profilePicture');
-    toast.success('Profile picture removed');
+  const removeProfilePicture = async () => {
+    setUploadingPicture(true);
+    try {
+      const res = await API.delete('/auth/profile-picture');
+      if (res.data.success) {
+        setProfilePicture('');
+        toast.success('Profile picture removed');
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to remove profile picture');
+    } finally {
+      setUploadingPicture(false);
+    }
   };
 
   const handleUpdateProfile = async (e) => {
@@ -273,15 +290,17 @@ const Layout = () => {
                 type="file"
                 accept="image/*"
                 onChange={handleProfilePictureUpload}
+                disabled={uploadingPicture}
               />
               <small>Maximum size: 2MB</small>
+              {uploadingPicture && <small>Saving...</small>}
             </div>
             <div className="modal-actions">
               <button type="button" className="cancel-btn" onClick={() => setShowUploadModal(false)}>
                 Cancel
               </button>
               {profilePicture && (
-                <button type="button" className="btn btn-danger" onClick={removeProfilePicture}>
+                <button type="button" className="btn btn-danger" onClick={removeProfilePicture} disabled={uploadingPicture}>
                   Remove Picture
                 </button>
               )}

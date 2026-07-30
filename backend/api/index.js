@@ -9,7 +9,7 @@ dotenv.config();
 const app = express();
 
 app.use(cors({ origin: '*' }));
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 
 // =====================================================
 // MODELS (kept in this single file on purpose - this is
@@ -19,6 +19,7 @@ const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   email: { type: String, default: '' },
   fullName: { type: String, default: '' },
+  profilePicture: { type: String, default: '' },
   password: { type: String, required: true },
   role: { type: String, default: 'admin' }
 });
@@ -214,6 +215,49 @@ app.put('/api/auth/update', auth, async (req, res) => {
 
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
+    res.json({ success: true, user });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Profile picture is stored on the User document (as a base64 data URL) so
+// it follows the account across devices/browsers, instead of only living
+// in one browser's localStorage.
+app.put('/api/auth/profile-picture', auth, async (req, res) => {
+  try {
+    const { profilePicture } = req.body;
+    if (!profilePicture || !profilePicture.startsWith('data:image/')) {
+      return res.status(400).json({ success: false, message: 'Invalid image data' });
+    }
+    // Roughly enforce the same 2MB limit the frontend already checks client-side.
+    const approxBytes = profilePicture.length * 0.75;
+    if (approxBytes > 2 * 1024 * 1024) {
+      return res.status(400).json({ success: false, message: 'Image must be less than 2MB' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      { profilePicture },
+      { new: true }
+    ).select('-password');
+
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    res.json({ success: true, user });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.delete('/api/auth/profile-picture', auth, async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      { profilePicture: '' },
+      { new: true }
+    ).select('-password');
+
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
     res.json({ success: true, user });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
