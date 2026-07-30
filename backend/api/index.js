@@ -20,7 +20,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Handle preflight requests
 app.options('*', cors());
 
 app.use(express.json());
@@ -50,6 +49,23 @@ const User = mongoose.model('User', UserSchema);
 // ===== HEALTH CHECK =====
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server running on Vercel!' });
+});
+
+// ===== TEST MONGODB CONNECTION =====
+app.get('/api/test-db', async (req, res) => {
+  try {
+    const count = await User.countDocuments();
+    res.json({ 
+      connected: true, 
+      userCount: count,
+      message: 'MongoDB is working!'
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      connected: false, 
+      error: error.message 
+    });
+  }
 });
 
 // ===== LOGIN ROUTE =====
