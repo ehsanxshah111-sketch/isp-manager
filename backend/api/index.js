@@ -219,9 +219,21 @@ app.put('/api/auth/change-password', auth, async (req, res) => {
 app.get('/api/customers', auth, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 0;
-    let query = Customer.find().sort({ createdAt: -1 });
-    if (limit) query = query.limit(limit);
-    const customers = await query;
+    let customers = await Customer.find();
+
+    // connectionDate is stored as a string ("1.0", "27.0", etc.), so a normal
+    // Mongo/string sort would put "10.0" before "2.0". Sort numerically by
+    // day instead, so Day 1 customers come first, then Day 2, and so on.
+    customers.sort((a, b) => {
+      const dayA = parseFloat(a.connectionDate);
+      const dayB = parseFloat(b.connectionDate);
+      const safeA = isNaN(dayA) ? 999 : dayA;
+      const safeB = isNaN(dayB) ? 999 : dayB;
+      if (safeA !== safeB) return safeA - safeB;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+    if (limit) customers = customers.slice(0, limit);
     res.json({ success: true, data: customers });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
