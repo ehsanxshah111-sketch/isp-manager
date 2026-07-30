@@ -1,0 +1,15 @@
+# Node modules (too big to upload)
+node_modules/
+
+# Secret passwords (NEVER upload!)
+.env
+.env.local
+.env.production
+
+# Build files
+dist/
+build/
+
+# IDE files
+.vscode/
+.idea/

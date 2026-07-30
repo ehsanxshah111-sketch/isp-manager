@@ -1,0 +1,57 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f0f4f9;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* ========================================
+   DARK MODE BASE STYLES
+   ======================================== */
+
+html.dark-mode {
+  background-color: #0d1117;
+}
+
+html.dark-mode body {
+  background-color: #0d1117;
+  color: #e6edf3;
+}
+
+html.dark-mode .loading {
+  color: #8b949e;
+}
+
+/* Dark mode scrollbar */
+html.dark-mode::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html.dark-mode::-webkit-scrollbar-track {
+  background: #161b22;
+}
+
+html.dark-mode::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 4px;
+}
+
+html.dark-mode::-webkit-scrollbar-thumb:hover {
+  background: #484f58;
+}
