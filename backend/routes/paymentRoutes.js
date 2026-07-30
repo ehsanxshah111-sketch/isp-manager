@@ -1,20 +1,26 @@
 const express = require('express');
 const router = express.Router();
-const { 
-  getPayments, 
-  createPayment, 
-  getPaymentSummary,
-  updatePayment,
-  deletePayment
-} = require('../controllers/paymentController');
-const auth = require('../middleware/auth');
+const mongoose = require('mongoose');
 
-router.use(auth);
+const Payment = mongoose.model('Payment');
 
-router.get('/', getPayments);
-router.get('/summary', getPaymentSummary);
-router.post('/', createPayment);
-router.put('/:id', updatePayment);
-router.delete('/:id', deletePayment);
+router.get('/', async (req, res) => {
+  try {
+    const payments = await Payment.find().sort({ date: -1 });
+    res.json(payments);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/', async (req, res) => {
+  try {
+    const payment = new Payment(req.body);
+    await payment.save();
+    res.status(201).json(payment);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 module.exports = router;

@@ -1,11 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { sendWhatsAppReminder, sendBulkWhatsApp } = require('../controllers/whatsappController');
-const auth = require('../middleware/auth');
 
-router.use(auth);
-
-router.post('/send', sendWhatsAppReminder);
-router.post('/bulk', sendBulkWhatsApp);
+router.get('/:phone', (req, res) => {
+  try {
+    const { phone } = req.params;
+    res.json({ whatsappUrl: `https://wa.me/${phone}` });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 module.exports = router;

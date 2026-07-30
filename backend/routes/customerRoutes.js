@@ -1,30 +1,43 @@
 const express = require('express');
 const router = express.Router();
-const {
-  getCustomers,
-  getCustomer,
-  getCustomerById,
-  createCustomer,
-  updateCustomer,
-  deleteCustomer,
-  bulkImportCustomers,
-  updateStatus,
-  updatePaymentStatus
-} = require('../controllers/customerController');
-const auth = require('../middleware/auth');
+const mongoose = require('mongoose');
 
-// All routes require authentication
-router.use(auth);
+// Register model if not already registered
+let Customer;
+try {
+  Customer = mongoose.model('Customer');
+} catch {
+  const CustomerSchema = new mongoose.Schema({
+    name: String,
+    customerId: String,
+    monthlyFee: Number,
+    pendingDues: Number,
+    connectionDate: String,
+    status: String,
+    paymentStatus: String
+  });
+  Customer = mongoose.model('Customer', CustomerSchema);
+}
 
-// Customer routes
-router.get('/', getCustomers);
-router.get('/id/:customerId', getCustomerById);
-router.get('/:id', getCustomer);
-router.post('/', createCustomer);
-router.post('/bulk', bulkImportCustomers);
-router.put('/:id', updateCustomer);
-router.patch('/:id/status', updateStatus);
-router.patch('/:id/payment-status', updatePaymentStatus);
-router.delete('/:id', deleteCustomer);
+// GET all customers
+router.get('/', async (req, res) => {
+  try {
+    const customers = await Customer.find().sort({ createdAt: -1 });
+    res.json(customers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST new customer
+router.post('/', async (req, res) => {
+  try {
+    const customer = new Customer(req.body);
+    await customer.save();
+    res.status(201).json(customer);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 module.exports = router;
