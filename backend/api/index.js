@@ -8,9 +8,9 @@ dotenv.config();
 
 const app = express();
 
-// ============================================================
-// CORS
-// ============================================================
+// --- CORS ---
+// CLIENT_URL can be a single origin or a comma-separated list
+// (e.g. "https://your-frontend.vercel.app,http://localhost:3000")
 const allowedOrigins = (process.env.CLIENT_URL || '')
   .split(',')
   .map((o) => o.trim())
@@ -18,6 +18,7 @@ const allowedOrigins = (process.env.CLIENT_URL || '')
 
 app.use(cors({
   origin: (origin, callback) => {
+    // Allow requests with no origin (curl, server-to-server, health checks)
     if (!origin) return callback(null, true);
     if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
       return callback(null, true);
@@ -32,9 +33,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ============================================================
-// DATABASE CONNECTION (cached for serverless)
-// ============================================================
+// --- MongoDB Connection ---
+// Serverless functions can be reused between invocations, so we cache the
+// connection instead of reconnecting on every request.
 let isConnected = false;
 const connectDB = async () => {
   if (isConnected) return;
@@ -57,62 +58,12 @@ app.use(async (req, res, next) => {
   }
 });
 
-// ============================================================
-// MODELS
-// ============================================================
-const UserSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
-  email: { type: String, required: true },
-  password: { type: String, required: true },
-  role: { type: String, default: 'user' },
-  createdAt: { type: Date, default: Date.now }
-});
-
-const CustomerSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  customerId: { type: String, unique: true },
-  monthlyFee: Number,
-  pendingDues: { type: Number, default: 0 },
-  connectionDate: String,
-  status: { type: String, default: 'Active' },
-  paymentStatus: { type: String, default: 'Unpaid' },
-  createdAt: { type: Date, default: Date.now }
-});
-
-const PaymentSchema = new mongoose.Schema({
-  customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
-  customerName: String,
-  amount: Number,
-  month: String,
-  year: String,
-  method: { type: String, default: 'Cash' },
-  status: { type: String, default: 'Paid' },
-  date: { type: Date, default: Date.now }
-});
-
-const ExpenseSchema = new mongoose.Schema({
-  description: { type: String, required: true },
-  amount: { type: Number, required: true },
-  category: { type: String, required: true },
-  date: { type: Date, default: Date.now }
-});
-
-// Register models
-mongoose.model('User', UserSchema);
-mongoose.model('Customer', CustomerSchema);
-mongoose.model('Payment', PaymentSchema);
-mongoose.model('Expense', ExpenseSchema);
-
-// ============================================================
-// HEALTH CHECK
-// ============================================================
+// --- Health check ---
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server running on Vercel!' });
 });
 
-// ============================================================
-// ROUTES
-// ============================================================
+// --- Routes ---
 app.use('/api/auth', require('../routes/authRoutes'));
 app.use('/api/customers', require('../routes/customerRoutes'));
 app.use('/api/payments', require('../routes/paymentRoutes'));
@@ -120,19 +71,13 @@ app.use('/api/expenses', require('../routes/expenseRoutes'));
 app.use('/api/dashboard', require('../routes/dashboardRoutes'));
 app.use('/api/whatsapp', require('../routes/whatsappRoutes'));
 
-// ============================================================
-// ERROR HANDLER
-// ============================================================
 app.use(errorHandler);
 
-// ============================================================
-// EXPORT FOR VERCEL
-// ============================================================
+// Export for Vercel serverless
 module.exports = app;
 
-// ============================================================
-// LOCAL DEVELOPMENT
-// ============================================================
+// Allow running this file directly too (node api/index.js), matching
+// package.json's "start" script, so local dev still works.
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
