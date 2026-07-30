@@ -11,21 +11,13 @@ const app = express();
 
 // ===== MIDDLEWARE =====
 app.use(cors({
-  origin: [
-    'https://isp-frontend-eight.vercel.app',
-    'https://isp-frontend-git-main-shah-a25a.vercel.app',
-    'https://isp-frontend-522nenhzr-shah-a25a.vercel.app',
-    process.env.CLIENT_URL || '*'
-  ],
+  origin: '*',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
 app.options('*', cors());
-
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 // ============================================================
 // DATABASE CONNECTION (with caching for Vercel)
@@ -72,12 +64,16 @@ const UserSchema = new mongoose.Schema({
 // Customer Model
 const CustomerSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  email: { type: String },
-  phone: { type: String },
-  address: { type: String },
-  package: { type: String },
-  monthlyFee: { type: Number },
-  status: { type: String, default: 'active' },
+  customerId: { type: String, unique: true },
+  email: String,
+  phone: String,
+  address: String,
+  package: String,
+  monthlyFee: Number,
+  pendingDues: { type: Number, default: 0 },
+  connectionDate: String,
+  status: { type: String, default: 'Active' },
+  paymentStatus: { type: String, default: 'Unpaid' },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -180,6 +176,8 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', async (req, res) => {
   try {
     await connectDB();
+    // For testing, return dummy user
+    // In production, verify token here
     res.json({ 
       user: { 
         username: 'admin', 
@@ -201,6 +199,7 @@ app.get('/api/customers', async (req, res) => {
     const customers = await Customer.find().sort({ createdAt: -1 });
     res.json(customers);
   } catch (error) {
+    console.error('Customers error:', error);
     res.status(500).json({ error: error.message });
   }
 });
