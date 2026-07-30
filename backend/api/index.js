@@ -11,6 +11,7 @@ const app = express();
 app.use(cors({
   origin: [
     'https://isp-frontend-eight.vercel.app',
+    'https://isp-frontend-git-main-shah-a25a.vercel.app',
     'https://isp-frontend-522nenhzr-shah-a25a.vercel.app',
     process.env.CLIENT_URL || '*'
   ],
@@ -28,7 +29,9 @@ app.use(express.urlencoded({ extended: true }));
 // ===== DATABASE CONNECTION =====
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
-  useUnifiedTopology: true
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
 })
 .then(() => console.log('✅ MongoDB Connected'))
 .catch(err => console.log('❌ MongoDB Error:', err));
