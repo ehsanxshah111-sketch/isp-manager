@@ -2,21 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 
-let Customer;
-try {
-  Customer = mongoose.model('Customer');
-} catch {
-  const CustomerSchema = new mongoose.Schema({
-    name: String,
-    customerId: String,
-    monthlyFee: Number,
-    pendingDues: { type: Number, default: 0 },
-    connectionDate: String,
-    status: { type: String, default: 'Active' },
-    paymentStatus: { type: String, default: 'Unpaid' }
-  });
-  Customer = mongoose.model('Customer', CustomerSchema);
-}
+const Customer = mongoose.model('Customer');
 
 router.get('/', async (req, res) => {
   try {
@@ -32,6 +18,26 @@ router.post('/', async (req, res) => {
     const customer = new Customer(req.body);
     await customer.save();
     res.status(201).json(customer);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.put('/:id', async (req, res) => {
+  try {
+    const customer = await Customer.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!customer) return res.status(404).json({ message: 'Customer not found' });
+    res.json(customer);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  try {
+    const customer = await Customer.findByIdAndDelete(req.params.id);
+    if (!customer) return res.status(404).json({ message: 'Customer not found' });
+    res.json({ message: 'Customer deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
