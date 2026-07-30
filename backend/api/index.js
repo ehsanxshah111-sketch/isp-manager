@@ -7,11 +7,15 @@ dotenv.config();
 
 const app = express();
 
-// Middleware
-app.use(cors({ origin: '*', credentials: true }));
+// ===== MIDDLEWARE =====
+app.use(cors({
+  origin: process.env.CLIENT_URL || '*',
+  credentials: true
+}));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// MongoDB Connection
+// ===== DATABASE CONNECTION =====
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
@@ -19,10 +23,71 @@ mongoose.connect(process.env.MONGODB_URI, {
 .then(() => console.log('✅ MongoDB Connected'))
 .catch(err => console.log('❌ MongoDB Error:', err));
 
-// Test Route
+// ===== HEALTH CHECK =====
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server running on Vercel!' });
 });
 
-// Export for Vercel
+// ===== LOGIN ROUTE =====
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    console.log('Login attempt:', username);
+    
+    const User = mongoose.model('User');
+    const user = await User.findOne({ username });
+    
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+    
+    const bcrypt = require('bcryptjs');
+    const isMatch = await bcrypt.compare(password, user.password);
+    
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid password' });
+    }
+    
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign(
+      { id: user._id, username: user.username },
+      process.env.JWT_SECRET || 'secret',
+      { expiresIn: '30d' }
+    );
+    
+    res.json({ 
+      token, 
+      user: { 
+        username: user.username, 
+        email: user.email,
+        role: user.role 
+      } 
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// ===== GET CURRENT USER =====
+app.get('/api/auth/me', async (req, res) => {
+  try {
+    res.json({ 
+      user: { 
+        username: 'admin', 
+        email: 'admin@isp.com',
+        role: 'admin' 
+      } 
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// ===== 404 HANDLER =====
+app.use('*', (req, res) => {
+  res.status(404).json({ message: 'Route not found' });
+});
+
+// ===== EXPORT FOR VERCEL =====
 module.exports = app;
