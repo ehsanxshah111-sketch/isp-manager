@@ -1,0 +1,289 @@
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+const Customer = require('../models/Customer');
+const User = require('../models/User');
+
+dotenv.config();
+
+// ===== ALL 176 CUSTOMERS =====
+const customersData = [
+  { name: "NADEEM JEWLAR", customerId: "M31Rehman", monthlyFee: 1200, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "M.AZAN SHOP", customerId: "M169M.Azan.C.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "CH.SOHAIL C.R", customerId: "M167Sohail", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "CH.WAQAR F.T", customerId: "M140Ch.Waqar", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ABDUL LATIF S.C", customerId: "M141Abdul.Latif.S.C", monthlyFee: 2000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "GANJ SHUKAR CLOTHE", customerId: "M38GangShakar", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AHMAD BEDSHEET SHOP", customerId: "M91Ahmad.Bed.Sheet", monthlyFee: 3000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MUBASHIR SHOP", customerId: "M255.Mubashar.Shop", monthlyFee: 1000, pendingDues: 1500, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SUPER FURNITURE", customerId: "M61SuperFernecture", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "PEARL SHOES", customerId: "M71Parl.Shoes", monthlyFee: 2000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MUJAHID GROCARY", customerId: "M164Mujahid.Crocry", monthlyFee: 2000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "NOMAN JUTT X.B", customerId: "M170Noman.Jutt", monthlyFee: 2000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AL.RAHIM CENTRY", customerId: "M170Al.Rahim.Centry", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "HIT SHOES", customerId: "M171HitShoes", monthlyFee: 2000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ADEEL COMRUS CLG", customerId: "M143Adeel.C.C", monthlyFee: 1200, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MADINA FEBRICS", customerId: "M72Rao.Shafi.K.M", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SH.UMAR BURKA", customerId: "M134Sh.UmarC.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ISRAR SHAH", customerId: "M132IsrarShah", monthlyFee: 1000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ABID ALI D.B", customerId: "M109AbidAliD.B", monthlyFee: 1000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "M.NAVEED G.B", customerId: "M58welcome", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RANA ABBAS", customerId: "M60RanaabbasS.C", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MOHSIN SISTER", customerId: "M17Alfalahmobile", monthlyFee: 1200, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "KABIR F.T", customerId: "M175Kabir", monthlyFee: 2500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RASHEED JUTT", customerId: "M87M.RasheedC.B", monthlyFee: 1200, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AKMAL E.B", customerId: "M53AmanAslamHoemE.B", monthlyFee: 1200, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "DIMOND BED SHEET", customerId: "M161Dimond.Bedsheet", monthlyFee: 2000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "FARHAN G.B", customerId: "M91GhulamS.C", monthlyFee: 2000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RIFAT BIBI R.C", customerId: "M151RifatR.C", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ARSLAN G.B", customerId: "M2Mirza", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "KHURSHEED ALAM", customerId: "M99KhursheedC.B", monthlyFee: 2000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "NADEEM M.C", customerId: "M100M.NadeenM.C", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SH.IJAZ M.C", customerId: "M101Sh.IjazM.C", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "BILAL NASHTA", customerId: "M4Bilal", monthlyFee: 4000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "LINKS TRADER", customerId: "M12Linkstrader", monthlyFee: 1200, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "FAHEEM G.B", customerId: "M27Javid", monthlyFee: 1700, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RAISAT ALI F.T", customerId: "M148RiasatAli", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SUBHANALLAH V.B", customerId: "M257SubhanAllahV.B", monthlyFee: 1200, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ABUBAKAR U.B", customerId: "M256AbubakarU.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SHAKEEL TARAR", customerId: "M64ShakeelTararS.C", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AMAN WAQAS", customerId: "M68Sh.Aman.Waqas", monthlyFee: 1500, pendingDues: 2100, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SHAHID GAS", customerId: "M143shahidG.C", monthlyFee: 1700, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "DR.ALI S.C", customerId: "M78Dr.AliS.C", monthlyFee: 1200, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "DARANKSHANDA F.T", customerId: "M182Darakshanda", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Paid" },
+  { name: "TARIQ E.B", customerId: "M77M.TariqE.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ALI TRUST PLAZA", customerId: "M9Kashitalor", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "REHMAN CENTRY SHOP", customerId: "M18Jalalstore", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "REHMAN CENTRY HOME", customerId: "M23wajadtrader", monthlyFee: 2000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SHABIR TILES", customerId: "M138Shabir.Tiles.Display", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RANA HASSAN", customerId: "M22Ranahassan", monthlyFee: 1200, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "NEHA M.M", customerId: "AshfaqM.M", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SALMAN CLOTH", customerId: "M164SulamanCloth", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "M.JAVID M.C", customerId: "M170M.Javed.M.C", monthlyFee: 2000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "TAJAMAL HUSSAIN A.B", customerId: "M162TajmalA.B", monthlyFee: 1200, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SH.UMAR A.B", customerId: "M163sh.Umar.A.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AMAR OPTICAL", customerId: "M163Amar.Optical", monthlyFee: 1000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "KASHA CH C.R", customerId: "M174KashaC.B", monthlyFee: 1200, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ATEEQ KARYANA", customerId: "Model6", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "M.ABBAS C.M", customerId: "M123M.AbbasC.M", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "IRFAN D.B", customerId: "M124IrfanD.B", monthlyFee: 2000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SARDAR & GO", customerId: "M24R.P.O.office", monthlyFee: 1500, pendingDues: 1500, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SAIMA AISH", customerId: "M76SaimaAishG.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "HUSSAIN MOBILE", customerId: "M22hussain", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ABDULLAH G.B", customerId: "M23Abdullah", monthlyFee: 1200, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SH.HOUSE F.T", customerId: "M30Lala", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "IRFAN R.C", customerId: "M257IrfanR.C", monthlyFee: 1500, pendingDues: 2500, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ABID JEWLAR", customerId: "M171Abid.Jewlar.C.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "NOOR C.B", customerId: "M84NoorC.B", monthlyFee: 1700, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "TAHIR TRADER C.B", customerId: "M149TahirTraders", monthlyFee: 1200, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "HAIR STORE", customerId: "M86HairStore", monthlyFee: 1000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AWAIS INTERPRICES", customerId: "M125AwaisInterprices", monthlyFee: 2000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SHAHID K.M", customerId: "M39shahid", monthlyFee: 2500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SHAN COSMATIC", customerId: "M36shanshopping", monthlyFee: 2200, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "HAMZA M.C", customerId: "M40Hamza", monthlyFee: 2500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MUBASHIR A.B", customerId: "M28Mubashar", monthlyFee: 1000, pendingDues: 2000, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "TALHA SH C.V", customerId: "M42Talha", monthlyFee: 2700, pendingDues: 5400, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AZEEM M.C", customerId: "M43AzeemM.C", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SANAULLAH", customerId: "M89sanaullah", monthlyFee: 1800, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "IQBAL BAKRY", customerId: "M33", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SAIM RIZWAN SPORTS", customerId: "M98Rizwan2", monthlyFee: 1500, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "IMRAN PAMPER", customerId: "M97Rizwan1", monthlyFee: 1000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "J.K.M", customerId: "M105MariaBiBi", monthlyFee: 1000, pendingDues: 0, connectionDate: "1.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "KASHI HOME", customerId: "M167Ali.Electronics", monthlyFee: 2000, pendingDues: 1500, connectionDate: "2.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AHMAD SH.R.C", customerId: "M136AhmadSheikhR.C", monthlyFee: 1000, pendingDues: 0, connectionDate: "3.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "QASIM A.B", customerId: "M252QasimA.B", monthlyFee: 1500, pendingDues: 1500, connectionDate: "3.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "KARACHI SALE MELA", customerId: "M68.Krachi.Sale.Mela", monthlyFee: 1500, pendingDues: 0, connectionDate: "4.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "KARIM NAWAZ S.C", customerId: "M253KarimS.C", monthlyFee: 1500, pendingDues: 0, connectionDate: "4.0", status: "Active", paymentStatus: "1 YEAR ADVANCED" },
+  { name: "VEHARI AVIATION", customerId: "M185Vehari.aviation", monthlyFee: 1200, pendingDues: 0, connectionDate: "4.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SUPER FURNITURE SHOP", customerId: "M186Super.Furniture.Shop", monthlyFee: 1500, pendingDues: 0, connectionDate: "4.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "KASHIF TRADER M.B", customerId: "M61UmairS.C", monthlyFee: 2000, pendingDues: 0, connectionDate: "5.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SAIF U.B", customerId: "M105M.SaifU.B", monthlyFee: 2000, pendingDues: 0, connectionDate: "5.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "M.SAID JEWLAR", customerId: "M164HajiSaidM.Jewlar", monthlyFee: 1500, pendingDues: 0, connectionDate: "5.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AL.HARAM TRAVEL", customerId: "M163AlharamTravel", monthlyFee: 1500, pendingDues: 0, connectionDate: "5.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "HAMAIYON AFZAL MOBILE", customerId: "M173Afzal.Mobile", monthlyFee: 1500, pendingDues: 0, connectionDate: "5.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "UMAR KHATAB V.B", customerId: "M144Umer.Khatab", monthlyFee: 1500, pendingDues: 0, connectionDate: "5.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RANA HOUSE F.T", customerId: "M71AbidOffice", monthlyFee: 1500, pendingDues: 0, connectionDate: "5.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "Jawad Mobile", customerId: "M11shoesclub", monthlyFee: 2000, pendingDues: 2000, connectionDate: "5.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SHAIR ALI KHAN", customerId: "M192ShairAliKhan", monthlyFee: 1000, pendingDues: 0, connectionDate: "6.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MIAN SAQIB", customerId: "M163MianSaqib", monthlyFee: 1500, pendingDues: 0, connectionDate: "6.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SHAKEEL G.B", customerId: "M176ShakeelG.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "6.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ALI ELECTRONICS", customerId: "M118Ahmadkashitalor", monthlyFee: 2000, pendingDues: 0, connectionDate: "6.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RAFIQ AHMAD C.B", customerId: "M139RafiqAhmadShopC.B", monthlyFee: 2000, pendingDues: 0, connectionDate: "6.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ABID CAMRUS", customerId: "M55Abid.Camras", monthlyFee: 1200, pendingDues: 0, connectionDate: "6.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MAZHAR RAO", customerId: "M56MazharE.B", monthlyFee: 2000, pendingDues: 4500, connectionDate: "6.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AHMAD SH.U.B", customerId: "M254AhmadU.B", monthlyFee: 1000, pendingDues: 0, connectionDate: "7.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MASOOD CENTRY HOUSE", customerId: "M255Akram.A.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "7.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "NAZAM", customerId: "M177Nazam", monthlyFee: 1000, pendingDues: 0, connectionDate: "7.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "CH ALI F.T", customerId: "M127AliChC.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "7.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "UNION MOBILE", customerId: "M104UnionMobile", monthlyFee: 1700, pendingDues: 0, connectionDate: "7.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "NADEEM S.C", customerId: "M165NadeemS.C", monthlyFee: 1500, pendingDues: 0, connectionDate: "7.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SAJID KAHLID R.C", customerId: "M146Sajid.Khalid", monthlyFee: 1500, pendingDues: 0, connectionDate: "7.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "M.AFZAL C.V", customerId: "M165M.AfzalC.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "7.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MOHSIN G.B", customerId: "M50MohsinJ.C", monthlyFee: 2000, pendingDues: 1500, connectionDate: "7.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "U.K MOTER", customerId: "M128UK.Moters", monthlyFee: 1000, pendingDues: 0, connectionDate: "8.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RANA NAKASH", customerId: "M107RanaNakashC.R", monthlyFee: 2000, pendingDues: 0, connectionDate: "8.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "Asadullah M.C", customerId: "M147Asadullah.M.C", monthlyFee: 1000, pendingDues: 0, connectionDate: "9.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SUPER FURNITURE", customerId: "M61SuperFernecture", monthlyFee: 1500, pendingDues: 0, connectionDate: "10.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "M.NAVEED G.B", customerId: "M58welcome", monthlyFee: 1500, pendingDues: 0, connectionDate: "10.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RANA ABBAS", customerId: "M60RanaabbasS.C", monthlyFee: 1500, pendingDues: 0, connectionDate: "10.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MOHSIN SISTER", customerId: "M17Alfalahmobile", monthlyFee: 1200, pendingDues: 0, connectionDate: "10.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "KABIR F.T", customerId: "M175Kabir", monthlyFee: 2500, pendingDues: 0, connectionDate: "10.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RASHEED JUTT", customerId: "M87M.RasheedC.B", monthlyFee: 1200, pendingDues: 0, connectionDate: "10.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "FAHEEM G.B", customerId: "M27Javid", monthlyFee: 1700, pendingDues: 0, connectionDate: "10.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RAISAT ALI F.T", customerId: "M148RiasatAli", monthlyFee: 1500, pendingDues: 0, connectionDate: "10.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SUBHANALLAH V.B", customerId: "M257SubhanAllahV.B", monthlyFee: 1200, pendingDues: 0, connectionDate: "11.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ABUBAKAR U.B", customerId: "M256AbubakarU.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "11.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SHAKEEL TARAR", customerId: "M64ShakeelTararS.C", monthlyFee: 1500, pendingDues: 0, connectionDate: "11.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "NEHA M.M", customerId: "AshfaqM.M", monthlyFee: 1500, pendingDues: 0, connectionDate: "12.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SALMAN CLOTH", customerId: "M164SulamanCloth", monthlyFee: 1500, pendingDues: 0, connectionDate: "12.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "M.JAVID M.C", customerId: "M170M.Javed.M.C", monthlyFee: 2000, pendingDues: 0, connectionDate: "12.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "TAJAMAL HUSSAIN A.B", customerId: "M162TajmalA.B", monthlyFee: 1200, pendingDues: 0, connectionDate: "12.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SH.UMAR A.B", customerId: "M163sh.Umar.A.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "12.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "IRFAN R.C", customerId: "M257IrfanR.C", monthlyFee: 1500, pendingDues: 2500, connectionDate: "13.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ABID JEWLAR", customerId: "M171Abid.Jewlar.C.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "13.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "NOOR C.B", customerId: "M84NoorC.B", monthlyFee: 1700, pendingDues: 0, connectionDate: "13.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "TAHIR TRADER C.B", customerId: "M149TahirTraders", monthlyFee: 1200, pendingDues: 0, connectionDate: "13.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "HAIR STORE", customerId: "M86HairStore", monthlyFee: 1000, pendingDues: 0, connectionDate: "13.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "M.JAVID F.T", customerId: "M108M.Javid.F", monthlyFee: 1500, pendingDues: 0, connectionDate: "13.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RAMZAN C.B", customerId: "M174M.Ramzan.C.B", monthlyFee: 2000, pendingDues: 0, connectionDate: "14.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SALMAN+BILAL", customerId: "M113HussnainM.C", monthlyFee: 1500, pendingDues: 0, connectionDate: "14.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MUBASHIR CHURI BAZAR", customerId: "M16Blueshoppingmall", monthlyFee: 2000, pendingDues: 0, connectionDate: "14.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "M.QAISAR BUTT X.B", customerId: "M173M.Qaisar", monthlyFee: 1500, pendingDues: 0, connectionDate: "14.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "JAMAL COLLECTION", customerId: "M51Jamalcollection", monthlyFee: 1500, pendingDues: 0, connectionDate: "14.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ZEEP HEAD OFFICE", customerId: "M8Zeepheadoffice", monthlyFee: 1500, pendingDues: 0, connectionDate: "14.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "UMAR BHATTI A.B", customerId: "M167UmerBhattiA.B", monthlyFee: 2000, pendingDues: 0, connectionDate: "14.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SHAHEEN CORPORATION", customerId: "M163Shaheen.Corpraction", monthlyFee: 1200, pendingDues: 0, connectionDate: "14.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ASHRAF CLOTH HOUSE", customerId: "M257Ashraf.Cloth", monthlyFee: 1000, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SUNARI COTTON", customerId: "M258Suhnari.Cotton", monthlyFee: 2500, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "IQBAL T.V SHOP", customerId: "M147IqbalT.v", monthlyFee: 1000, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "IQBAL T.V HOME", customerId: "M258Iqbalt.v.Home", monthlyFee: 1000, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RAIZ R.C", customerId: "M175RayazR.C", monthlyFee: 1500, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "HAFIZ DUA TRADER K.M", customerId: "M176Hafiz.Dua.Trader", monthlyFee: 1000, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "IKRAM K.M", customerId: "M73IkramK.M", monthlyFee: 1500, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RAHMAT JEWLAR", customerId: "Model1", monthlyFee: 2500, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "OLYMPIA TRAVEL", customerId: "M65olympia", monthlyFee: 2000, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "KHALDA G.B", customerId: "M42KhaldaG.B", monthlyFee: 2500, pendingDues: 2500, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "JAMIL C.B", customerId: "M145JamilC.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "HUSSAIN M.C", customerId: "M62SalmanB.Market", monthlyFee: 2000, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "DUA TRADER", customerId: "M26Dua", monthlyFee: 1000, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "HAMIDIA CLOTH", customerId: "M25Mubashir", monthlyFee: 1200, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ZAHIR TAHIR karyana", customerId: "M29Zaheer", monthlyFee: 1800, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "NASAR COSMATIC", customerId: "M35Nasarcosmetics", monthlyFee: 2700, pendingDues: 2850, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AL.MAKKAH MEDICAL STORE", customerId: "M93Al-Makkah", monthlyFee: 1500, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MASOOD CENTRY", customerId: "M95MasoodCentery", monthlyFee: 1500, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MADINA TYER", customerId: "M67MadinaTyer", monthlyFee: 2000, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AHMAD HOME R.C", customerId: "M122AhmadHome", monthlyFee: 2000, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AZHAR ALI", customerId: "M165AzharAli", monthlyFee: 1200, pendingDues: 2400, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "UNI OPTICAL", customerId: "M166Uni.Optical", monthlyFee: 2000, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RANA NAKASH", customerId: "M167Nakash.Home", monthlyFee: 2000, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "WASLI MOBILE", customerId: "M37shabi", monthlyFee: 1000, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "IKRAM TOOR", customerId: "M66IkramToor", monthlyFee: 0, pendingDues: 0, connectionDate: "15.0", status: "Active", paymentStatus: "FREE" },
+  { name: "SAMINA M.C", customerId: "M177Samina.M.C", monthlyFee: 2000, pendingDues: 0, connectionDate: "16.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RASM.O.RIVAJ", customerId: "M170Rasmo.o.rewaj", monthlyFee: 1500, pendingDues: 0, connectionDate: "16.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MUJAHID GROCARY", customerId: "M164Mujahid.Crocry", monthlyFee: 2000, pendingDues: 0, connectionDate: "17.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "NOMAN JUTT X.B", customerId: "M170Noman.Jutt", monthlyFee: 2000, pendingDues: 0, connectionDate: "17.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AL.RAHIM CENTRY", customerId: "M170Al.Rahim.Centry", monthlyFee: 1500, pendingDues: 0, connectionDate: "17.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "HIT SHOES", customerId: "M171HitShoes", monthlyFee: 2000, pendingDues: 0, connectionDate: "17.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AKMAL E.B", customerId: "M53AmanAslamHoemE.B", monthlyFee: 1200, pendingDues: 0, connectionDate: "18.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "DIMOND BED SHEET", customerId: "M161Dimond.Bedsheet", monthlyFee: 2000, pendingDues: 0, connectionDate: "18.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "FARHAN G.B", customerId: "M91GhulamS.C", monthlyFee: 2000, pendingDues: 0, connectionDate: "18.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RIFAT BIBI R.C", customerId: "M151RifatR.C", monthlyFee: 1500, pendingDues: 0, connectionDate: "19.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ARSLAN G.B", customerId: "M2Mirza", monthlyFee: 1500, pendingDues: 0, connectionDate: "19.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AMAN WAQAS", customerId: "M68Sh.Aman.Waqas", monthlyFee: 1500, pendingDues: 2100, connectionDate: "19.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SHAHID GAS", customerId: "M143shahidG.C", monthlyFee: 1700, pendingDues: 0, connectionDate: "19.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "DR.ALI S.C", customerId: "M78Dr.AliS.C", monthlyFee: 1200, pendingDues: 0, connectionDate: "20.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "DARANKSHANDA F.T", customerId: "M182Darakshanda", monthlyFee: 1500, pendingDues: 0, connectionDate: "20.0", status: "Active", paymentStatus: "Paid" },
+  { name: "TARIQ E.B", customerId: "M77M.TariqE.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "20.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AMAR OPTICAL", customerId: "M163Amar.Optical", monthlyFee: 1000, pendingDues: 0, connectionDate: "20.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "KASHA CH C.R", customerId: "M174KashaC.B", monthlyFee: 1200, pendingDues: 0, connectionDate: "20.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ATEEQ KARYANA", customerId: "Model6", monthlyFee: 1500, pendingDues: 0, connectionDate: "20.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "M.ABBAS C.M", customerId: "M123M.AbbasC.M", monthlyFee: 1500, pendingDues: 0, connectionDate: "20.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "IRFAN D.B", customerId: "M124IrfanD.B", monthlyFee: 2000, pendingDues: 0, connectionDate: "20.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AWAIS INTERPRICES", customerId: "M125AwaisInterprices", monthlyFee: 2000, pendingDues: 0, connectionDate: "20.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SHAHID K.M", customerId: "M39shahid", monthlyFee: 2500, pendingDues: 0, connectionDate: "20.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SHAN COSMATIC", customerId: "M36shanshopping", monthlyFee: 2200, pendingDues: 0, connectionDate: "20.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "HAMZA M.C", customerId: "M40Hamza", monthlyFee: 2500, pendingDues: 0, connectionDate: "20.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MUBASHIR A.B", customerId: "M28Mubashar", monthlyFee: 1000, pendingDues: 2000, connectionDate: "20.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SH ADIL S.C", customerId: "M69sh.Adil", monthlyFee: 2000, pendingDues: 0, connectionDate: "20.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "BABA FAREED", customerId: "M131Baba.Freed.Jewlars", monthlyFee: 1000, pendingDues: 0, connectionDate: "20.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ABDULLAH GULL", customerId: "M172Abdullah.Gull.M.C", monthlyFee: 1000, pendingDues: 0, connectionDate: "24.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "HUSSAIN AKBAR", customerId: "M159AkbarCrocary", monthlyFee: 1500, pendingDues: 1500, connectionDate: "24.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ALEESHA U.B", customerId: "M10aleeshaU.bad", monthlyFee: 1000, pendingDues: 2000, connectionDate: "24.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "UMAR FAROOQ R.C", customerId: "M96UmarFarooqR.C", monthlyFee: 2000, pendingDues: 0, connectionDate: "24.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ONE DOLLAR SHOP", customerId: "M32onedollar", monthlyFee: 1200, pendingDues: 0, connectionDate: "24.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ONE DOLLAR HOME", customerId: "M175Aman.Aslam.Godam.F.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "24.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MANAGER ASHFAQ", customerId: "M70AbidMughal", monthlyFee: 1000, pendingDues: 0, connectionDate: "24.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "KHALDA S.C", customerId: "M179KhaldaS.C", monthlyFee: 1500, pendingDues: 0, connectionDate: "24.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "FAKHAR RAZA E.B", customerId: "M150FakharE.B", monthlyFee: 1200, pendingDues: 0, connectionDate: "24.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "FAISAL S.C", customerId: "M72FaisalS.C", monthlyFee: 2000, pendingDues: 0, connectionDate: "26.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "ALI POPULAR C.B", customerId: "M173Ali.Popular.C.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "27.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "NELUM CENTER", customerId: "M140Nelam.Center", monthlyFee: 1500, pendingDues: 0, connectionDate: "27.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AHMAD ALI CORPORATION", customerId: "M126AhmadAliCorpraction", monthlyFee: 1200, pendingDues: 0, connectionDate: "27.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SAFI BEDSHEET", customerId: "M112SafiBedSheet", monthlyFee: 1500, pendingDues: 0, connectionDate: "27.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "M.SHAZAD J.C", customerId: "M175Shazad.J", monthlyFee: 2000, pendingDues: 0, connectionDate: "27.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "MUSSA KHAN", customerId: "M171Mussa", monthlyFee: 2500, pendingDues: 0, connectionDate: "27.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "SHABIR & SONS", customerId: "School3", monthlyFee: 1500, pendingDues: 0, connectionDate: "27.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "BAHZAD MOBILE", customerId: "M164Bhazad.Mobile", monthlyFee: 2000, pendingDues: 0, connectionDate: "28.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "M.ABBAS NALKI", customerId: "M170M.AbbasC.B", monthlyFee: 1500, pendingDues: 0, connectionDate: "28.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RANA HANIF HOME", customerId: "M135Rana.Hanif", monthlyFee: 3000, pendingDues: 0, connectionDate: "28.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "RAFIQ AHMAD M.C", customerId: "M114RafiqM.C", monthlyFee: 2000, pendingDues: 0, connectionDate: "31.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "AHMAD RANA F.T", customerId: "M5Alhaseeb", monthlyFee: 3000, pendingDues: 0, connectionDate: "31.0", status: "Active", paymentStatus: "Unpaid" },
+  { name: "HADI MOBILE", customerId: "M166Hadi.Mobile", monthlyFee: 2000, pendingDues: 0, connectionDate: "31.0", status: "Active", paymentStatus: "Unpaid" }
+];
+
+async function seedDatabase() {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('📡 Connected to MongoDB');
+
+    const admin = await User.findOne({ username: 'admin' });
+    if (!admin) {
+      console.log('❌ Admin user not found!');
+      console.log('Please run: node create-admin-simple.js first');
+      process.exit(1);
+    }
+    console.log(`👤 Found admin: ${admin.username}`);
+
+    // ===== DELETE ALL EXISTING CUSTOMERS =====
+    const deleted = await Customer.deleteMany({});
+    console.log(`🗑️ Deleted ${deleted.deletedCount} existing customers`);
+
+    // ===== INSERT WITH ERROR HANDLING - SKIP DUPLICATES =====
+    let insertedCount = 0;
+    let errorCount = 0;
+    const errors = [];
+
+    for (const customer of customersData) {
+      try {
+        const num = parseFloat(customer.connectionDate);
+        const dayNumber = isNaN(num) ? 0 : num;
+        
+        await Customer.create({
+          ...customer,
+          dayNumber: dayNumber,
+          createdBy: admin._id
+        });
+        insertedCount++;
+      } catch (err) {
+        if (err.code === 11000) {
+          errorCount++;
+          errors.push(customer.customerId);
+          console.log(`⚠️ Skipped duplicate: ${customer.customerId}`);
+        } else {
+          console.error(`❌ Error inserting ${customer.customerId}:`, err.message);
+        }
+      }
+    }
+
+    console.log(`\n✅ Imported ${insertedCount} customers successfully!`);
+    if (errorCount > 0) {
+      console.log(`⚠️ Skipped ${errorCount} duplicates:`, errors);
+    }
+    
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error:', error.message);
+    process.exit(1);
+  }
+}
+
+seedDatabase();
