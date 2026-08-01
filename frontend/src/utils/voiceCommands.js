@@ -323,16 +323,90 @@ function cleanName(raw) {
     .trim();
 }
 
+// ------------------------------------------------------------
+// Fuzzy name matching
+// Speech-to-text is never perfect - a single mis-heard letter
+// ("Ahmad" heard as "Ahmed"), a dropped/added "s" or "es"
+// ("Karim" vs "Karims"), or a slightly garbled ending are all
+// completely normal. Instead of requiring an exact/startsWith/
+// includes match, we fall back to comparing how CLOSE the
+// spoken name is to each real customer name (Levenshtein edit
+// distance) and accept the closest one if it's close enough.
+// ------------------------------------------------------------
+function levenshtein(a, b) {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1, // deletion
+        dp[i][j - 1] + 1, // insertion
+        dp[i - 1][j - 1] + cost // substitution
+      );
+    }
+  }
+  return dp[m][n];
+}
+
+// Returns a similarity score from 0 (nothing alike) to 1 (identical).
+function similarity(a, b) {
+  if (!a && !b) return 1;
+  if (!a || !b) return 0;
+  const dist = levenshtein(a, b);
+  return 1 - dist / Math.max(a.length, b.length);
+}
+
+// A spoken name is accepted as a match if it's this similar (or closer)
+// to a real customer name. 0.72 comfortably absorbs one or two mis-heard
+// letters or a missing/extra "s"/"es" on names of ordinary length, while
+// still rejecting names that are genuinely different.
+const NAME_MATCH_THRESHOLD = 0.72;
+
 function findCustomer(customers, rawName) {
   const name = cleanName(rawName).toLowerCase();
   if (!name) return null;
-  return (
+
+  // 1) Exact / prefix / substring match - fast path for the common case.
+  const exact =
     customers.find((c) => c.name?.toLowerCase() === name) ||
     customers.find((c) => c.name?.toLowerCase().startsWith(name)) ||
     customers.find((c) => c.name?.toLowerCase().includes(name)) ||
-    customers.find((c) => c.customerId?.toLowerCase() === name) ||
-    null
-  );
+    customers.find((c) => c.customerId?.toLowerCase() === name);
+  if (exact) return exact;
+
+  // 2) Fuzzy fallback - handles mishearing, typos, and singular/plural
+  // slips ("Ahmed" vs "Ahmeds", "Bilal" vs "Bilal's" already stripped
+  // above, "Farhan" heard as "Farhaan", etc.).
+  const nameWords = name.split(/\s+/).filter(Boolean);
+  let best = null;
+  let bestScore = 0;
+  for (const c of customers) {
+    if (!c.name) continue;
+    const fullName = c.name.toLowerCase();
+    const fullWords = fullName.split(/\s+/).filter(Boolean);
+
+    // Compare the whole spoken phrase to the whole real name...
+    let score = similarity(name, fullName);
+    // ...and also compare word-by-word, so "Ahmed" alone still matches
+    // a customer stored as "Ahmed Khan", and vice versa.
+    for (const nw of nameWords) {
+      for (const fw of fullWords) {
+        score = Math.max(score, similarity(nw, fw));
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+
+  return bestScore >= NAME_MATCH_THRESHOLD ? best : null;
 }
 
 function money(n) {
@@ -347,39 +421,45 @@ function money(n) {
 // address, delete, paid, unpaid) - add a synonym once in the
 // dictionary and every one of these understands it.
 // ------------------------------------------------------------
+// NOTE ON (?:s|es)? / s? SUFFIXES BELOW:
+// Speech recognition regularly adds or drops a trailing "s"/"es" on verbs
+// and nouns ("open" -> "opens", "customer" -> "customers", "expense" ->
+// "expenses", "fee" -> "fees"). Every keyword below that could plausibly
+// pick up an extra letter this way has an optional (?:s|es)? so a small
+// mis-hearing never breaks the match.
 const PATTERNS = [
-  { key: 'navigate', regex: /^(?:go to|open|show|navigate to)\s+(dashboard|customer|payment|expense|report|setting)s?\s*$/i },
-  { key: 'openCustomerDetail', regex: /^(?:open|show|view)\s+(?:customer\s+)?(.+?)(?:'s)?\s+(?:profile|details|record|info)$/i },
-  { key: 'openCustomerDetail', regex: /^(?:open|show|view)\s+customer\s+(.+)/i },
+  { key: 'navigate', regex: /^(?:go to|opens?|shows?|navigate to)\s+(dashboard|customer|payment|expense|report|setting)(?:s|es)?\s*$/i },
+  { key: 'openCustomerDetail', regex: /^(?:opens?|shows?|views?)\s+(?:customers?\s+)?(.+?)(?:'s)?\s+(?:profile|details?|record|info)(?:s|es)?$/i },
+  { key: 'openCustomerDetail', regex: /^(?:opens?|shows?|views?)\s+customers?\s+(.+)/i },
 
-  { key: 'deleteCustomer', regex: /^delete\s+customer\s+(.+)/i },
+  { key: 'deleteCustomer', regex: /^deletes?\s+customers?\s+(.+)/i },
 
-  { key: 'addExpense', regex: /add\s+(?:an?\s+)?expense\s+(?:of\s+)?(.+?)\s+for\s+(.+)/i, order: ['value', 'name'] },
+  { key: 'addExpense', regex: /adds?\s+(?:an?\s+)?expense(?:s|es)?\s+(?:of\s+)?(.+?)\s+for\s+(.+)/i, order: ['value', 'name'] },
 
-  { key: 'recordPayment', regex: /(?:record|log)?\s*(?:a\s+)?payment\s+of\s+(.+?)\s+(?:from|for)\s+(.+)/i, order: ['value', 'name'] },
+  { key: 'recordPayment', regex: /(?:records?|logs?)?\s*(?:a\s+)?payments?\s+of\s+(.+?)\s+(?:from|for)\s+(.+)/i, order: ['value', 'name'] },
   { key: 'recordPayment', regex: /^(.+?)\s+paid\s+(fee\s+)?(\d[\d,]*|\S+)\s*$/i, order: ['name', 'skip', 'value'] },
 
-  { key: 'addCustomer', regex: /^(?:please\s+)?add(?:\s+a)?(?:\s+new)?\s+customer(?:\s+(?:named|called))?\s*(.*)$/i },
+  { key: 'addCustomer', regex: /^(?:please\s+)?adds?(?:\s+a)?(?:\s+new)?\s+customers?(?:\s+(?:named|called))?\s*(.*)$/i },
 
-  { key: 'setBill', regex: /(?:set|update|change)\s+(.+?)(?:'s)?\s+fee\s+(?:to|as)\s+(.+)/i },
-  { key: 'setDues', regex: /(?:set|update|change)\s+(.+?)(?:'s)?\s+dues\s+(?:to|as)\s+(.+)/i },
-  { key: 'addDues', regex: /add\s+(.+?)\s+(?:to|in)\s+(.+?)(?:'s)?\s+dues/i, order: ['value', 'name'] },
-  { key: 'setPackage', regex: /(?:set|update|change)\s+(.+?)(?:'s)?\s+package\s+(?:to|as)\s+(.+)/i },
-  { key: 'setPhone', regex: /(?:set|update|change)\s+(.+?)(?:'s)?\s+phone\s+(?:to|as)\s+(.+)/i },
-  { key: 'setAddress', regex: /(?:set|update|change)\s+(.+?)(?:'s)?\s+address\s+(?:to|as)\s+(.+)/i },
-  { key: 'setStatus', regex: /(?:set|change|mark)\s+(.+?)(?:'s)?\s+status\s+(?:to|as)\s+(active|cut ?off|disable[d]?)/i },
+  { key: 'setBill', regex: /(?:sets?|updates?|changes?)\s+(.+?)(?:'s)?\s+fee(?:s|es)?\s+(?:to|as)\s+(.+)/i },
+  { key: 'setDues', regex: /(?:sets?|updates?|changes?)\s+(.+?)(?:'s)?\s+dues\s+(?:to|as)\s+(.+)/i },
+  { key: 'addDues', regex: /adds?\s+(.+?)\s+(?:to|in)\s+(.+?)(?:'s)?\s+dues/i, order: ['value', 'name'] },
+  { key: 'setPackage', regex: /(?:sets?|updates?|changes?)\s+(.+?)(?:'s)?\s+package(?:s|es)?\s+(?:to|as)\s+(.+)/i },
+  { key: 'setPhone', regex: /(?:sets?|updates?|changes?)\s+(.+?)(?:'s)?\s+phone(?:s|es)?\s+(?:to|as)\s+(.+)/i },
+  { key: 'setAddress', regex: /(?:sets?|updates?|changes?)\s+(.+?)(?:'s)?\s+address(?:es)?\s+(?:to|as)\s+(.+)/i },
+  { key: 'setStatus', regex: /(?:sets?|changes?|marks?)\s+(.+?)(?:'s)?\s+status(?:es)?\s+(?:to|as)\s+(active|cut ?off|disable[d]?)/i },
 
-  { key: 'markPaid', regex: /(?:mark|set)\s+(.+?)\s+(?:as\s+)?paid/i },
-  { key: 'markUnpaid', regex: /(?:mark|set)\s+(.+?)\s+(?:as\s+)?unpaid/i },
+  { key: 'markPaid', regex: /(?:marks?|sets?)\s+(.+?)\s+(?:as\s+)?paid/i },
+  { key: 'markUnpaid', regex: /(?:marks?|sets?)\s+(.+?)\s+(?:as\s+)?unpaid/i },
 
-  { key: 'queryDues', regex: /(?:how much does|what does)\s+(.+?)\s+owe/i },
+  { key: 'queryDues', regex: /(?:how much does|what does)\s+(.+?)\s+owes?/i },
   { key: 'queryDues', regex: /(.+?)(?:'s)?\s+dues\s*$/i },
-  { key: 'queryInfo', regex: /(?:find|search for|look up|show me)\s+(?:customer\s+)?(.+)/i },
+  { key: 'queryInfo', regex: /(?:finds?|search(?:es)? for|looks?\s+up|shows?\s+me)\s+(?:customers?\s+)?(.+)/i },
 
-  { key: 'queryStat', statKey: 'totalCustomers', regex: /how many customers|total number of customers/i },
-  { key: 'queryStat', statKey: 'active', regex: /how many active customers/i },
-  { key: 'queryStat', statKey: 'unpaid', regex: /how many unpaid customers|how many pending customers/i },
-  { key: 'queryStat', statKey: 'paid', regex: /how many paid customers/i },
+  { key: 'queryStat', statKey: 'totalCustomers', regex: /how many customers?|total number of customers?/i },
+  { key: 'queryStat', statKey: 'active', regex: /how many active customers?/i },
+  { key: 'queryStat', statKey: 'unpaid', regex: /how many unpaid customers?|how many pending customers?/i },
+  { key: 'queryStat', statKey: 'paid', regex: /how many paid customers?/i },
   { key: 'queryStat', statKey: 'totalRevenue', regex: /(?:what(?:'s| is) )?(?:my |the )?total revenue/i },
   { key: 'queryStat', statKey: 'totalDues', regex: /(?:what(?:'s| is) )?(?:my |the )?total dues/i },
   { key: 'queryStat', statKey: 'totalExpenses', regex: /(?:what(?:'s| is) )?(?:my |the )?total expenses/i },
