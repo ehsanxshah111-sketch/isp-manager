@@ -3,7 +3,17 @@
 // Parses a spoken sentence into an action and executes it
 // against the SAME API endpoints the UI already uses.
 // Nothing here creates new MongoDB collections or fields -
-// it only calls existing customer / payment routes.
+// it only calls existing customer / payment / expense routes.
+//
+// Two layers make this multilingual:
+//  1. normalizeMultilingual() rewrites Urdu/Roman-Urdu/Punjabi
+//     words to ONE canonical English trigger word (e.g. "fee",
+//     "charges", "package fee", "bakaya" all become "fee" or
+//     "dues") so every pattern below only has to check for the
+//     canonical word - this is the "dictionary".
+//  2. MESSAGES holds every spoken/toast reply in English, Urdu
+//     and Punjabi, so the reply comes back in whichever
+//     language is currently selected on the mic button.
 // ============================================================
 
 import { setPendingCustomerTarget } from './voiceBus';
@@ -14,42 +24,71 @@ export const VOICE_LANGUAGES = {
   pa: { code: 'pa-Guru-IN', label: 'Punjabi' },
 };
 
-// Common Urdu-script and Roman-Urdu/Punjabi words mapped to the English
-// trigger words the regex patterns below understand. Speech recognition
-// output for these languages varies a lot by device/browser, so this is
-// a best-effort layer - it widens what gets recognized without needing
-// a full translation engine (which would need an external API + cost).
+// ------------------------------------------------------------
+// THE DICTIONARY
+// Add new words/phrases here and every command that uses that
+// slot understands the new word immediately - nothing else
+// needs to change.
+// ------------------------------------------------------------
 const MULTILINGUAL_KEYWORDS = [
-  [/\b(kholo|khol do|کھولو|کھول دو)\b/gi, 'open'],
-  [/\b(dikhao|دکھاؤ|دکھائیں)\b/gi, 'show'],
-  [/\b(customer|kasto?mar|گاہک|کسٹمر)\b/gi, 'customer'],
-  [/\b(bill|بل)\b/gi, 'bill'],
-  [/\b(fees?|فیس)\b/gi, 'fee'],
-  [/\b(set karo|mqrr karo|مقرر کرو|لگاؤ)\b/gi, 'set'],
-  [/\b(change karo|badlo|بدلو|تبدیل کرو)\b/gi, 'change'],
+  // --- navigation verbs ---
+  [/\b(kholo|khol do|کھولو|کھول دو|ਖੋਲ੍ਹੋ)\b/gi, 'open'],
+  [/\b(dikhao|دکھاؤ|دکھائیں|ਦਿਖਾਓ)\b/gi, 'show'],
+
+  // --- customer / person words ---
+  [/\b(customer|kasto?mar|client|consumer|گاہک|کسٹمر|صارف|ਗਾਹਕ)\b/gi, 'customer'],
+
+  // --- fee / bill / amount - every synonym funnels to ONE word: "fee" ---
+  [
+    /\b(fees?|amounts?|rupees?|rs\.?|charges?|price|prices?|subscription|rent|bills?|monthly fee|monthly bill|monthly charges?|monthly rent|package fee|internet fee|connection fee|بل|فیس|رقم|چارجز|کرایہ|ماہانہ فیس|پیکج فیس|ਬਿੱਲ|ਫੀਸ|ਰਕਮ)\b/gi,
+    'fee',
+  ],
+
+  // --- dues / balance / outstanding - every synonym funnels to "dues" ---
+  [
+    /\b(dues?|balance|outstanding|bakaya|baqaya|udhar|remaining amount|due amount|pending amount|واجبات|بقایا|ادھار|بیلنس|باقی رقم|ਬਕਾਇਆ|ਬਾਕੀ)\b/gi,
+    'dues',
+  ],
+
+  // --- action verbs ---
+  [/\b(set karo|mqrr karo|مقرر کرو|لگاؤ|ਸੈੱਟ ਕਰੋ)\b/gi, 'set'],
+  [/\b(change karo|badlo|بدلو|تبدیل کرو|ਬਦਲੋ)\b/gi, 'change'],
   [/\b(mark karo|نشان لگاؤ)\b/gi, 'mark'],
-  [/\b(paid|ada|ada shuda|ادا شدہ|ادا)\b/gi, 'paid'],
-  [/\b(unpaid|na ada|نا ادا|غیر ادا شدہ)\b/gi, 'unpaid'],
-  [/\b(dues?|bakaya|واجبات|بقایا)\b/gi, 'dues'],
-  [/\b(balance|بیلنس)\b/gi, 'balance'],
-  [/\b(status|حالت|صورتحال)\b/gi, 'status'],
-  [/\b(active|فعال|چالو)\b/gi, 'active'],
-  [/\b(cut ?off|بند|منقطع)\b/gi, 'cut off'],
-  [/\b(disable|غیر فعال)\b/gi, 'disable'],
-  [/\b(add karo|shamil karo|شامل کرو|نیا)\b/gi, 'add'],
+  [/\b(add karo|shamil karo|create|register|نیا|شامل کرو|ਸ਼ਾਮਲ ਕਰੋ)\b/gi, 'add'],
+  [/\b(delete karo|remove|hatao|nikaal do|ہٹاؤ|نکال دو|حذف کرو|ਹਟਾਓ)\b/gi, 'delete'],
   [/\b(new|naya|نیا)\b/gi, 'new'],
   [/\b(named|kay naam|کے نام سے|نام)\b/gi, 'named'],
-  [/\b(phone number|number|نمبر)\b/gi, 'phone'],
-  [/\b(profile|details?|record|تفصیلات|پروفائل)\b/gi, 'details'],
-  [/\b(package|پیکج)\b/gi, 'package'],
+
+  // --- payment status ---
+  [/\b(paid|ada|ada shuda|wasool|ادا شدہ|ادا|وصول)\b/gi, 'paid'],
+  [/\b(unpaid|na ada|نا ادا|غیر ادا شدہ)\b/gi, 'unpaid'],
+
+  // --- misc fields ---
+  [/\b(status|حالت|صورتحال|ਹਾਲਤ)\b/gi, 'status'],
+  [/\b(active|فعال|چالو|ਸਰਗਰਮ)\b/gi, 'active'],
+  [/\b(cut ?off|بند|منقطع|ਬੰਦ)\b/gi, 'cut off'],
+  [/\b(disable|غیر فعال|ਅਯੋਗ)\b/gi, 'disable'],
+  [/\b(phone number|number|mobile|contact number|whatsapp number|نمبر|موبائل|ਨੰਬਰ)\b/gi, 'phone'],
+  [/\b(address|pata|پتہ|ایڈریس|ਪਤਾ)\b/gi, 'address'],
+  [/\b(profile|details?|record|info|تفصیلات|پروفائل)\b/gi, 'details'],
+  [/\b(package|plan|پیکج|پلان)\b/gi, 'package'],
   [/\b(how much|kitna|کتنا)\b/gi, 'how much'],
   [/\b(owe|owes|bakaya hai|واجب الادا)\b/gi, 'owe'],
+
+  // --- pages ---
   [/\b(dashboard|ڈیش بورڈ)\b/gi, 'dashboard'],
-  [/\b(payments?|ادائیگی|ادائیگیاں)\b/gi, 'payments'],
-  [/\b(expenses?|اخراجات)\b/gi, 'expenses'],
-  [/\b(reports?|رپورٹ)\b/gi, 'reports'],
-  [/\b(settings?|ترتیبات)\b/gi, 'settings'],
+  [/\b(payments?|ادائیگی|ادائیگیاں)\b/gi, 'payment'],
+  [/\b(expenses?|kharcha|kharche|خرچہ|خرچے|اخراجات|ਖਰਚਾ)\b/gi, 'expense'],
+  [/\b(reports?|رپورٹ)\b/gi, 'report'],
+  [/\b(settings?|ترتیبات)\b/gi, 'setting'],
   [/\b(help|madad|مدد)\b/gi, 'help'],
+
+  // --- whole-phrase dashboard questions ---
+  [/\b(kitne customer|kitne gahak|کتنے کسٹمر|کتنے گاہک)\b/gi, 'how many customers'],
+  [/\b(kul aamdani|کل آمدنی)\b/gi, 'total revenue'],
+  [/\b(kul baqaya|kul bakaya|کل بقایا)\b/gi, 'total dues'],
+  [/\b(kul kharcha|کل اخراجات)\b/gi, 'total expenses'],
+  [/\b(khalis munafa|خالص منافع)\b/gi, 'net profit'],
 ];
 
 // Runs before pattern matching so a mixed Urdu/Punjabi/English sentence
@@ -75,6 +114,168 @@ const PAGE_MAP = {
   setting: '/settings',
   settings: '/settings',
 };
+
+const PAGE_LABELS = {
+  en: { dashboard: 'dashboard', customer: 'customers', payment: 'payments', expense: 'expenses', report: 'reports', setting: 'settings' },
+  ur: { dashboard: 'ڈیش بورڈ', customer: 'کسٹمرز', payment: 'ادائیگیاں', expense: 'اخراجات', report: 'رپورٹس', setting: 'ترتیبات' },
+  pa: { dashboard: 'ਡੈਸ਼ਬੋਰਡ', customer: 'ਗਾਹਕ', payment: 'ਭੁਗਤਾਨ', expense: 'ਖਰਚੇ', report: 'ਰਿਪੋਰਟਾਂ', setting: 'ਸੈਟਿੰਗਾਂ' },
+};
+
+const STATUS_LABELS = {
+  en: { Active: 'Active', 'Cut Off': 'Cut Off', Disable: 'Disable', Paid: 'Paid', Unpaid: 'Unpaid', '1 YEAR ADVANCED': '1 Year Advanced', FREE: 'Free' },
+  ur: { Active: 'فعال', 'Cut Off': 'بند', Disable: 'غیر فعال', Paid: 'ادا شدہ', Unpaid: 'غیر ادا شدہ', '1 YEAR ADVANCED': 'ایک سال ایڈوانس', FREE: 'مفت' },
+  pa: { Active: 'ਸਰਗਰਮ', 'Cut Off': 'ਬੰਦ', Disable: 'ਅਯੋਗ', Paid: 'ਅਦਾ ਕੀਤਾ', Unpaid: 'ਅਦਾ ਨਹੀਂ ਕੀਤਾ', '1 YEAR ADVANCED': 'ਇੱਕ ਸਾਲ ਐਡਵਾਂਸ', FREE: 'ਮੁਫ਼ਤ' },
+};
+
+const STAT_LABELS = {
+  totalCustomers: { en: 'total number of customers', ur: 'کل کسٹمرز کی تعداد', pa: 'ਕੁੱਲ ਗਾਹਕਾਂ ਦੀ ਗਿਣਤੀ', money: false },
+  active: { en: 'active customers', ur: 'فعال کسٹمرز', pa: 'ਸਰਗਰਮ ਗਾਹਕ', money: false },
+  unpaid: { en: 'unpaid customers', ur: 'غیر ادا شدہ کسٹمرز', pa: 'ਅਦਾ ਨਾ ਕੀਤੇ ਗਾਹਕ', money: false },
+  paid: { en: 'customers marked as paid', ur: 'ادا شدہ کسٹمرز', pa: 'ਅਦਾ ਕੀਤੇ ਗਾਹਕ', money: false },
+  totalRevenue: { en: 'total monthly revenue', ur: 'کل ماہانہ آمدنی', pa: 'ਕੁੱਲ ਮਹੀਨਾਵਾਰ ਆਮਦਨ', money: true },
+  totalDues: { en: 'total pending dues', ur: 'کل بقایا رقم', pa: 'ਕੁੱਲ ਬਕਾਇਆ', money: true },
+  totalExpenses: { en: 'total expenses', ur: 'کل اخراجات', pa: 'ਕੁੱਲ ਖਰਚੇ', money: true },
+  netProfit: { en: 'net profit', ur: 'خالص منافع', pa: 'ਸ਼ੁੱਧ ਮੁਨਾਫ਼ਾ', money: true },
+  collected: { en: 'amount collected', ur: 'وصول شدہ رقم', pa: 'ਵਸੂਲ ਕੀਤੀ ਰਕਮ', money: true },
+  pendingCollection: { en: 'pending collection', ur: 'باقی وصولی', pa: 'ਬਾਕੀ ਵਸੂਲੀ', money: true },
+};
+
+const EXPENSE_CATEGORY_HINTS = [
+  [/salary|salaries|staff|wages|تنخواہ/i, 'Salaries'],
+  [/internet|bandwidth|fiber|انٹرنیٹ/i, 'Internet'],
+  [/electric|utility|utilities|bijli|بجلی/i, 'Utilities'],
+  [/router|equipment|cable|hardware|آلات/i, 'Equipment'],
+  [/repair|maintenance|مرمت/i, 'Maintenance'],
+  [/ad|marketing|promotion|اشتہار/i, 'Marketing'],
+  [/rent|office|دفتر|کرایہ/i, 'Office'],
+];
+function guessExpenseCategory(title) {
+  const hit = EXPENSE_CATEGORY_HINTS.find(([re]) => re.test(title));
+  return hit ? hit[1] : 'Other';
+}
+
+// ------------------------------------------------------------
+// Reply templates - one function/string per key, per language.
+// t() falls back to English if a translation is ever missing.
+// ------------------------------------------------------------
+const MESSAGES = {
+  en: {
+    notUnderstood: (tr) => `Sorry, I didn't understand: "${tr}". Say "help" to hear what I can do.`,
+    help:
+      'Try things like: "open customers", "set John\'s fee to fifteen hundred", "mark John as paid", ' +
+      '"John paid 1500", "set John\'s status to cut off", "how much does John owe", "open John\'s profile", ' +
+      '"add customer John with fee 1500", "add expense of 500 for diesel", "delete customer John", or ' +
+      '"what is my total revenue".',
+    openingPage: (p) => `Opening ${p}.`,
+    unknownPage: (p) => `I don't know a page called ${p}.`,
+    customerNotFound: (n) => `I couldn't find a customer matching ${n}.`,
+    customerInfo: (c, pkg, fee, dues, status, pay) =>
+      `${c.name}: package ${pkg}, monthly fee ${fee}, pending dues ${dues}, status ${status}, payment ${pay}.`,
+    owes: (n, amt) => `${n} owes ${amt}.`,
+    openingProfile: (n) => `Opening ${n}'s profile.`,
+    askNameFee: 'Sure - what is the customer\'s name and monthly fee? For example: "add customer Ahmed with fee 1500".',
+    missedName: 'I got the fee but missed the name. Try: "add customer Ahmed with fee 1500".',
+    askFee: (n) => `Got the name ${n} - now what's the monthly fee? Try: "add customer ${n} with fee 1500".`,
+    addedCustomer: (n, fee) => `Added new customer ${n} with a monthly fee of ${fee}.`,
+    missedAmount: (n) => `I didn't catch the amount for ${n}.`,
+    updatedBill: (n, before, after) => `Updated ${n}'s fee from ${before} to ${after}.`,
+    setDues: (n, amt) => `Set ${n}'s pending dues to ${amt}.`,
+    addedDues: (amt, n, total) => `Added ${amt} to ${n}'s dues. New balance is ${total}.`,
+    unknownStatus: (s) => `I don't recognize the status ${s}.`,
+    statusUpdated: (n, s) => `${n}'s status is now ${s}.`,
+    markedPaid: (n) => `Marked ${n} as paid and cleared their dues.`,
+    markedUnpaid: (n) => `Marked ${n} as unpaid.`,
+    deletedCustomer: (n) => `Customer ${n} has been permanently deleted.`,
+    addedExpense: (amt, title, cat) => `Added an expense of ${amt} for ${title} (category: ${cat}).`,
+    expenseMissingAmount: 'I didn\'t catch the expense amount. Try: "add expense of 500 for diesel".',
+    expenseMissingTitle: 'What is the expense for? Try: "add expense of 500 for diesel".',
+    recordedPayment: (amt, n, dues) => `Recorded a payment of ${amt} from ${n}. Remaining dues: ${dues}.`,
+    packageUpdated: (n, pkg) => `${n}'s package is now ${pkg}.`,
+    phoneUpdated: (n) => `${n}'s phone number has been updated.`,
+    addressUpdated: (n) => `${n}'s address has been updated.`,
+    statLine: (label, value) => `Your ${label} is ${value}.`,
+    genericError: 'Something went wrong running that command.',
+  },
+  ur: {
+    notUnderstood: (tr) => `معاف کیجیے، میں سمجھ نہیں سکا: "${tr}"۔ مدد کے لیے "مدد" کہیں۔`,
+    help:
+      'کوشش کریں: "کسٹمرز کھولو"، "احمد کی فیس پندرہ سو کرو"، "احمد کو ادا شدہ کریں"، ' +
+      '"احمد نے پندرہ سو ادا کیے"، "احمد کا سٹیٹس کٹ آف کرو"، "احمد پر کتنے بقایا ہیں"، ' +
+      '"احمد کی پروفائل کھولو"، "کسٹمر احمد فیس پندرہ سو کے ساتھ شامل کرو"، ' +
+      '"پانچ سو کا خرچہ ڈیزل کے لیے شامل کرو"، "کسٹمر احمد حذف کرو"، یا "میری کل آمدنی کتنی ہے"۔',
+    openingPage: (p) => `${p} کھول رہا ہوں۔`,
+    unknownPage: (p) => `مجھے ${p} نامی کوئی صفحہ نہیں ملا۔`,
+    customerNotFound: (n) => `مجھے ${n} سے ملتا جلتا کوئی کسٹمر نہیں ملا۔`,
+    customerInfo: (c, pkg, fee, dues, status, pay) =>
+      `${c.name}: پیکج ${pkg}، ماہانہ فیس ${fee}، بقایا ${dues}، حالت ${status}، ادائیگی ${pay}۔`,
+    owes: (n, amt) => `${n} پر ${amt} بقایا ہیں۔`,
+    openingProfile: (n) => `${n} کی پروفائل کھول رہا ہوں۔`,
+    askNameFee: 'ٹھیک ہے - کسٹمر کا نام اور ماہانہ فیس بتائیں۔ مثلاً: "کسٹمر احمد فیس پندرہ سو شامل کرو"۔',
+    missedName: 'فیس مل گئی مگر نام نہیں ملا۔ کوشش کریں: "کسٹمر احمد فیس پندرہ سو شامل کرو"۔',
+    askFee: (n) => `${n} کا نام مل گیا - ماہانہ فیس کیا ہے؟ کوشش کریں: "کسٹمر ${n} فیس پندرہ سو شامل کرو"۔`,
+    addedCustomer: (n, fee) => `نیا کسٹمر ${n} شامل کر دیا، ماہانہ فیس ${fee}۔`,
+    missedAmount: (n) => `${n} کے لیے رقم سمجھ نہیں آئی۔`,
+    updatedBill: (n, before, after) => `${n} کی فیس ${before} سے ${after} کر دی گئی۔`,
+    setDues: (n, amt) => `${n} کے بقایا ${amt} مقرر کر دیے۔`,
+    addedDues: (amt, n, total) => `${n} کے بقایا میں ${amt} شامل کیا۔ نیا بیلنس ${total} ہے۔`,
+    unknownStatus: (s) => `مجھے سٹیٹس ${s} سمجھ نہیں آیا۔`,
+    statusUpdated: (n, s) => `${n} کا سٹیٹس اب ${s} ہے۔`,
+    markedPaid: (n) => `${n} کو ادا شدہ کر دیا اور بقایا ختم کر دیا۔`,
+    markedUnpaid: (n) => `${n} کو غیر ادا شدہ کر دیا۔`,
+    deletedCustomer: (n) => `کسٹمر ${n} کو ہمیشہ کے لیے حذف کر دیا گیا۔`,
+    addedExpense: (amt, title, cat) => `${amt} کا خرچہ "${title}" کے لیے شامل کر دیا (زمرہ: ${cat})۔`,
+    expenseMissingAmount: 'خرچے کی رقم سمجھ نہیں آئی۔ کوشش کریں: "پانچ سو کا خرچہ ڈیزل کے لیے شامل کرو"۔',
+    expenseMissingTitle: 'خرچہ کس چیز کے لیے ہے؟ کوشش کریں: "پانچ سو کا خرچہ ڈیزل کے لیے شامل کرو"۔',
+    recordedPayment: (amt, n, dues) => `${n} سے ${amt} کی ادائیگی موصول ہو گئی۔ باقی بقایا ${dues} ہے۔`,
+    packageUpdated: (n, pkg) => `${n} کا پیکج اب ${pkg} ہے۔`,
+    phoneUpdated: (n) => `${n} کا فون نمبر اپڈیٹ کر دیا گیا۔`,
+    addressUpdated: (n) => `${n} کا پتہ اپڈیٹ کر دیا گیا۔`,
+    statLine: (label, value) => `آپ کا ${label} ${value} ہے۔`,
+    genericError: 'کچھ غلط ہو گیا، دوبارہ کوشش کریں۔',
+  },
+  pa: {
+    notUnderstood: (tr) => `ਮੁਆਫ਼ ਕਰਨਾ, ਮੈਨੂੰ ਸਮਝ ਨਹੀਂ ਆਇਆ: "${tr}"। ਮਦਦ ਲਈ "ਮਦਦ" ਕਹੋ।`,
+    help:
+      'ਕੋਸ਼ਿਸ਼ ਕਰੋ: "ਗਾਹਕ ਖੋਲ੍ਹੋ", "ਜੌਨ ਦੀ ਫੀਸ ਪੰਦਰਾਂ ਸੌ ਕਰੋ", "ਜੌਨ ਨੂੰ ਅਦਾ ਕੀਤਾ ਕਰੋ", ' +
+      '"ਜੌਨ ਦਾ ਸਟੇਟਸ ਕੱਟ ਆਫ ਕਰੋ", "ਜੌਨ ਤੇ ਕਿੰਨਾ ਬਕਾਇਆ ਹੈ", "ਨਵਾਂ ਗਾਹਕ ਜੌਨ ਫੀਸ ਪੰਦਰਾਂ ਸੌ ਨਾਲ ਸ਼ਾਮਲ ਕਰੋ", ' +
+      'ਜਾਂ "ਮੇਰੀ ਕੁੱਲ ਆਮਦਨ ਕਿੰਨੀ ਹੈ"।',
+    openingPage: (p) => `${p} ਖੋਲ੍ਹ ਰਿਹਾ ਹਾਂ।`,
+    unknownPage: (p) => `ਮੈਨੂੰ ${p} ਨਾਮ ਦਾ ਕੋਈ ਪੰਨਾ ਨਹੀਂ ਮਿਲਿਆ।`,
+    customerNotFound: (n) => `ਮੈਨੂੰ ${n} ਨਾਲ ਮਿਲਦਾ ਕੋਈ ਗਾਹਕ ਨਹੀਂ ਮਿਲਿਆ।`,
+    customerInfo: (c, pkg, fee, dues, status, pay) =>
+      `${c.name}: ਪੈਕੇਜ ${pkg}, ਮਹੀਨਾਵਾਰ ਫੀਸ ${fee}, ਬਕਾਇਆ ${dues}, ਹਾਲਤ ${status}, ਭੁਗਤਾਨ ${pay}।`,
+    owes: (n, amt) => `${n} ਤੇ ${amt} ਬਕਾਇਆ ਹੈ।`,
+    openingProfile: (n) => `${n} ਦੀ ਪ੍ਰੋਫਾਈਲ ਖੋਲ੍ਹ ਰਿਹਾ ਹਾਂ।`,
+    askNameFee: 'ਠੀਕ ਹੈ - ਗਾਹਕ ਦਾ ਨਾਮ ਅਤੇ ਮਹੀਨਾਵਾਰ ਫੀਸ ਦੱਸੋ।',
+    missedName: 'ਫੀਸ ਮਿਲ ਗਈ ਪਰ ਨਾਮ ਨਹੀਂ ਮਿਲਿਆ।',
+    askFee: (n) => `${n} ਦਾ ਨਾਮ ਮਿਲ ਗਿਆ - ਮਹੀਨਾਵਾਰ ਫੀਸ ਕੀ ਹੈ?`,
+    addedCustomer: (n, fee) => `ਨਵਾਂ ਗਾਹਕ ${n} ਸ਼ਾਮਲ ਕੀਤਾ, ਮਹੀਨਾਵਾਰ ਫੀਸ ${fee}।`,
+    missedAmount: (n) => `${n} ਲਈ ਰਕਮ ਸਮਝ ਨਹੀਂ ਆਈ।`,
+    updatedBill: (n, before, after) => `${n} ਦੀ ਫੀਸ ${before} ਤੋਂ ${after} ਕਰ ਦਿੱਤੀ।`,
+    setDues: (n, amt) => `${n} ਦਾ ਬਕਾਇਆ ${amt} ਸੈੱਟ ਕਰ ਦਿੱਤਾ।`,
+    addedDues: (amt, n, total) => `${n} ਦੇ ਬਕਾਏ ਵਿੱਚ ${amt} ਜੋੜਿਆ। ਨਵਾਂ ਬਕਾਇਆ ${total} ਹੈ।`,
+    unknownStatus: (s) => `ਮੈਨੂੰ ਸਟੇਟਸ ${s} ਸਮਝ ਨਹੀਂ ਆਇਆ।`,
+    statusUpdated: (n, s) => `${n} ਦਾ ਸਟੇਟਸ ਹੁਣ ${s} ਹੈ।`,
+    markedPaid: (n) => `${n} ਨੂੰ ਅਦਾ ਕੀਤਾ ਮਾਰਕ ਕੀਤਾ ਅਤੇ ਬਕਾਇਆ ਸਾਫ਼ ਕੀਤਾ।`,
+    markedUnpaid: (n) => `${n} ਨੂੰ ਅਦਾ ਨਾ ਕੀਤਾ ਮਾਰਕ ਕੀਤਾ।`,
+    deletedCustomer: (n) => `ਗਾਹਕ ${n} ਨੂੰ ਹਮੇਸ਼ਾ ਲਈ ਹਟਾ ਦਿੱਤਾ ਗਿਆ।`,
+    addedExpense: (amt, title, cat) => `${title} ਲਈ ${amt} ਦਾ ਖਰਚਾ ਸ਼ਾਮਲ ਕੀਤਾ (ਸ਼੍ਰੇਣੀ: ${cat})।`,
+    expenseMissingAmount: 'ਖਰਚੇ ਦੀ ਰਕਮ ਸਮਝ ਨਹੀਂ ਆਈ।',
+    expenseMissingTitle: 'ਖਰਚਾ ਕਿਸ ਲਈ ਹੈ?',
+    recordedPayment: (amt, n, dues) => `${n} ਤੋਂ ${amt} ਦਾ ਭੁਗਤਾਨ ਮਿਲਿਆ। ਬਾਕੀ ਬਕਾਇਆ ${dues} ਹੈ।`,
+    packageUpdated: (n, pkg) => `${n} ਦਾ ਪੈਕੇਜ ਹੁਣ ${pkg} ਹੈ।`,
+    phoneUpdated: (n) => `${n} ਦਾ ਫੋਨ ਨੰਬਰ ਅੱਪਡੇਟ ਕਰ ਦਿੱਤਾ।`,
+    addressUpdated: (n) => `${n} ਦਾ ਪਤਾ ਅੱਪਡੇਟ ਕਰ ਦਿੱਤਾ।`,
+    statLine: (label, value) => `ਤੁਹਾਡਾ ${label} ${value} ਹੈ।`,
+    genericError: 'ਕੁਝ ਗਲਤ ਹੋ ਗਿਆ, ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।',
+  },
+};
+
+function t(lang, key, ...args) {
+  const dict = MESSAGES[lang] || MESSAGES.en;
+  const entry = dict[key] ?? MESSAGES.en[key];
+  return typeof entry === 'function' ? entry(...args) : entry;
+}
 
 const SMALL_NUMBERS = {
   zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7,
@@ -125,7 +326,6 @@ function cleanName(raw) {
 function findCustomer(customers, rawName) {
   const name = cleanName(rawName).toLowerCase();
   if (!name) return null;
-  // exact match first, then "starts with", then "includes"
   return (
     customers.find((c) => c.name?.toLowerCase() === name) ||
     customers.find((c) => c.name?.toLowerCase().startsWith(name)) ||
@@ -136,176 +336,208 @@ function findCustomer(customers, rawName) {
 }
 
 function money(n) {
-  return `Rs ${Number(n).toLocaleString()}`;
+  return `Rs ${Number(n || 0).toLocaleString()}`;
 }
 
 // ------------------------------------------------------------
 // Command patterns, tried in order. Each returns a handler
-// context (name/value groups) when matched.
+// context (name/value groups) when matched. All slot keywords
+// here are the CANONICAL words produced by normalizeMultilingual
+// above (fee, dues, customer, expense, payment, package, phone,
+// address, delete, paid, unpaid) - add a synonym once in the
+// dictionary and every one of these understands it.
 // ------------------------------------------------------------
 const PATTERNS = [
-  {
-    key: 'navigate',
-    regex: /^(?:go to|open|show|navigate to)\s+(dashboard|customers?|payments?|expenses?|reports?|settings?)\s*$/i,
-  },
-  {
-    key: 'openCustomerDetail',
-    regex: /^(?:open|show|view)\s+(?:customer\s+)?(.+?)(?:'s)?\s+(?:profile|details|record|info)$/i,
-  },
-  {
-    key: 'openCustomerDetail',
-    regex: /^(?:open|show|view)\s+customer\s+(.+)/i,
-  },
-  {
-    key: 'addCustomer',
-    regex: /^(?:please\s+)?add(?:\s+a)?(?:\s+new)?\s+customer(?:\s+(?:named|called))?\s*(.*)$/i,
-  },
-  {
-    key: 'setBill',
-    regex: /(?:set|update|change)\s+(.+?)(?:'s)?\s+(?:bill|monthly fee|package price|fee)\s+(?:to|as)\s+(.+)/i,
-  },
-  {
-    key: 'setDues',
-    regex: /(?:set|update|change)\s+(.+?)(?:'s)?\s+(?:pending dues|dues|balance|outstanding)\s+(?:to|as)\s+(.+)/i,
-  },
-  {
-    key: 'addDues',
-    regex: /add\s+(.+?)\s+(?:to|in)\s+(.+?)(?:'s)?\s+(?:pending dues|dues|balance)/i,
-    order: ['value', 'name'],
-  },
-  {
-    key: 'setStatus',
-    regex: /(?:set|change|mark)\s+(.+?)(?:'s)?\s+status\s+(?:to|as)\s+(active|cut ?off|disable[d]?)/i,
-  },
-  {
-    key: 'markPaid',
-    regex: /(?:mark|set)\s+(.+?)\s+(?:as\s+)?paid/i,
-  },
-  {
-    key: 'markUnpaid',
-    regex: /(?:mark|set)\s+(.+?)\s+(?:as\s+)?unpaid/i,
-  },
-  {
-    key: 'queryDues',
-    regex: /(?:how much does|what does)\s+(.+?)\s+owe/i,
-  },
-  {
-    key: 'queryDues',
-    regex: /(.+?)(?:'s)?\s+(?:pending dues|balance|dues)\s*$/i,
-  },
-  {
-    key: 'queryInfo',
-    regex: /(?:find|search for|look up|show me)\s+(?:customer\s+)?(.+)/i,
-  },
-  {
-    key: 'help',
-    regex: /^(help|what can you do|what can i say|commands)/i,
-  },
+  { key: 'navigate', regex: /^(?:go to|open|show|navigate to)\s+(dashboard|customer|payment|expense|report|setting)s?\s*$/i },
+  { key: 'openCustomerDetail', regex: /^(?:open|show|view)\s+(?:customer\s+)?(.+?)(?:'s)?\s+(?:profile|details|record|info)$/i },
+  { key: 'openCustomerDetail', regex: /^(?:open|show|view)\s+customer\s+(.+)/i },
+
+  { key: 'deleteCustomer', regex: /^delete\s+customer\s+(.+)/i },
+
+  { key: 'addExpense', regex: /add\s+(?:an?\s+)?expense\s+(?:of\s+)?(.+?)\s+for\s+(.+)/i, order: ['value', 'name'] },
+
+  { key: 'recordPayment', regex: /(?:record|log)?\s*(?:a\s+)?payment\s+of\s+(.+?)\s+(?:from|for)\s+(.+)/i, order: ['value', 'name'] },
+  { key: 'recordPayment', regex: /^(.+?)\s+paid\s+(fee\s+)?(\d[\d,]*|\S+)\s*$/i, order: ['name', 'skip', 'value'] },
+
+  { key: 'addCustomer', regex: /^(?:please\s+)?add(?:\s+a)?(?:\s+new)?\s+customer(?:\s+(?:named|called))?\s*(.*)$/i },
+
+  { key: 'setBill', regex: /(?:set|update|change)\s+(.+?)(?:'s)?\s+fee\s+(?:to|as)\s+(.+)/i },
+  { key: 'setDues', regex: /(?:set|update|change)\s+(.+?)(?:'s)?\s+dues\s+(?:to|as)\s+(.+)/i },
+  { key: 'addDues', regex: /add\s+(.+?)\s+(?:to|in)\s+(.+?)(?:'s)?\s+dues/i, order: ['value', 'name'] },
+  { key: 'setPackage', regex: /(?:set|update|change)\s+(.+?)(?:'s)?\s+package\s+(?:to|as)\s+(.+)/i },
+  { key: 'setPhone', regex: /(?:set|update|change)\s+(.+?)(?:'s)?\s+phone\s+(?:to|as)\s+(.+)/i },
+  { key: 'setAddress', regex: /(?:set|update|change)\s+(.+?)(?:'s)?\s+address\s+(?:to|as)\s+(.+)/i },
+  { key: 'setStatus', regex: /(?:set|change|mark)\s+(.+?)(?:'s)?\s+status\s+(?:to|as)\s+(active|cut ?off|disable[d]?)/i },
+
+  { key: 'markPaid', regex: /(?:mark|set)\s+(.+?)\s+(?:as\s+)?paid/i },
+  { key: 'markUnpaid', regex: /(?:mark|set)\s+(.+?)\s+(?:as\s+)?unpaid/i },
+
+  { key: 'queryDues', regex: /(?:how much does|what does)\s+(.+?)\s+owe/i },
+  { key: 'queryDues', regex: /(.+?)(?:'s)?\s+dues\s*$/i },
+  { key: 'queryInfo', regex: /(?:find|search for|look up|show me)\s+(?:customer\s+)?(.+)/i },
+
+  { key: 'queryStat', statKey: 'totalCustomers', regex: /how many customers|total number of customers/i },
+  { key: 'queryStat', statKey: 'active', regex: /how many active customers/i },
+  { key: 'queryStat', statKey: 'unpaid', regex: /how many unpaid customers|how many pending customers/i },
+  { key: 'queryStat', statKey: 'paid', regex: /how many paid customers/i },
+  { key: 'queryStat', statKey: 'totalRevenue', regex: /(?:what(?:'s| is) )?(?:my |the )?total revenue/i },
+  { key: 'queryStat', statKey: 'totalDues', regex: /(?:what(?:'s| is) )?(?:my |the )?total dues/i },
+  { key: 'queryStat', statKey: 'totalExpenses', regex: /(?:what(?:'s| is) )?(?:my |the )?total expenses/i },
+  { key: 'queryStat', statKey: 'netProfit', regex: /(?:what(?:'s| is) )?(?:my |the )?net profit/i },
+  { key: 'queryStat', statKey: 'collected', regex: /(?:what(?:'s| is) )?(?:my |the )?(?:amount collected|total collected)/i },
+  { key: 'queryStat', statKey: 'pendingCollection', regex: /(?:what(?:'s| is) )?(?:my |the )?pending collection/i },
+
+  { key: 'help', regex: /^(help|what can you do|what can i say|commands)/i },
 ];
 
 function matchCommand(transcript) {
   const text = normalizeMultilingual(transcript.trim().replace(/[.?!]+$/, ''));
   for (const p of PATTERNS) {
     const m = text.match(p.regex);
-    if (m) return { key: p.key, groups: m.slice(1), order: p.order };
+    if (m) return { key: p.key, groups: m.slice(1), order: p.order, statKey: p.statKey };
   }
   return null;
 }
 
 /**
  * Executes a parsed voice command.
- * ctx = { API, navigate, getCustomers } where getCustomers()
- * returns a (cached) array of customers already fetched from
- * the existing GET /api/customers endpoint - no extra storage.
+ * ctx = { API, navigate, getCustomers, refreshCustomers, lang }
  */
 export async function runVoiceCommand(transcript, ctx) {
+  const lang = ctx.lang && MESSAGES[ctx.lang] ? ctx.lang : 'en';
   const match = matchCommand(transcript);
   if (!match) {
-    return {
-      ok: false,
-      message: `Sorry, I didn't understand: "${transcript}". Try saying "help" to hear what I can do.`,
-    };
+    return { ok: false, message: t(lang, 'notUnderstood', transcript) };
   }
 
-  const { key, groups, order } = match;
+  const { key, groups, order, statKey } = match;
 
   if (key === 'help') {
-    return {
-      ok: true,
-      message:
-        'You can say things like: "open customers", "set John\'s bill to fifteen hundred", ' +
-        '"mark John as paid", "set John\'s status to cut off", "how much does John owe", ' +
-        '"open John\'s profile", or "add customer John with fee 1500".',
-    };
+    return { ok: true, message: t(lang, 'help') };
   }
 
   if (key === 'navigate') {
     const target = groups[0].toLowerCase().replace(/s$/, '');
     const path = PAGE_MAP[target] || PAGE_MAP[target + 's'];
-    if (!path) return { ok: false, message: `I don't know a page called ${groups[0]}.` };
+    if (!path) return { ok: false, message: t(lang, 'unknownPage', groups[0]) };
     ctx.navigate(path);
-    return { ok: true, message: `Opening ${target}.` };
+    return { ok: true, message: t(lang, 'openingPage', PAGE_LABELS[lang]?.[target] || target) };
+  }
+
+  if (key === 'queryStat') {
+    const res = await ctx.API.get('/dashboard');
+    const stats = res.data?.data?.stats || {};
+    const info = STAT_LABELS[statKey];
+    const raw = stats[statKey];
+    const value = info.money ? money(raw) : Number(raw || 0).toLocaleString();
+    return { ok: true, message: t(lang, 'statLine', info[lang] || info.en, value) };
+  }
+
+  if (key === 'addExpense') {
+    let [rawValue, rawTitle] = groups;
+    const amount = wordsToNumber(rawValue);
+    if (amount == null) return { ok: false, message: t(lang, 'expenseMissingAmount') };
+    const title = (rawTitle || '').trim();
+    if (!title) return { ok: false, message: t(lang, 'expenseMissingTitle') };
+    const category = guessExpenseCategory(title);
+    await ctx.API.post('/expenses', { title, amount, category, description: 'Added via voice command' });
+    return { ok: true, message: t(lang, 'addedExpense', money(amount), title, category) };
   }
 
   // Everything below needs the customer list
   const customers = await ctx.getCustomers();
 
+  if (key === 'recordPayment') {
+    let rawValue, rawName;
+    if (order && order[0] === 'name') {
+      [rawName, , rawValue] = groups; // skip the optional "fee " capture
+    } else {
+      [rawValue, rawName] = groups;
+    }
+    const customer = findCustomer(customers, rawName);
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
+    const amount = wordsToNumber(rawValue);
+    if (amount == null) return { ok: false, message: t(lang, 'missedAmount', customer.name) };
+
+    const newDues = Math.max((customer.pendingDues || 0) - amount, 0);
+    await ctx.API.put(`/customers/${customer._id}`, {
+      pendingDues: newDues,
+      paymentStatus: newDues <= 0 ? 'Paid' : customer.paymentStatus,
+    });
+    try {
+      await ctx.API.post('/payments', {
+        customerId: customer.customerId,
+        amount,
+        billingMonth: new Date().toLocaleString('en-US', { month: 'long' }),
+        method: 'Cash',
+        notes: 'Recorded via voice command',
+      });
+    } catch (e) {
+      // Payment log is best-effort; the balance update above is what matters most.
+    }
+    ctx.refreshCustomers();
+    return { ok: true, message: t(lang, 'recordedPayment', money(amount), customer.name, money(newDues)) };
+  }
+
+  if (key === 'deleteCustomer') {
+    const customer = findCustomer(customers, groups[0]);
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
+    await ctx.API.delete(`/customers/${customer._id}`);
+    ctx.refreshCustomers();
+    return { ok: true, message: t(lang, 'deletedCustomer', customer.name) };
+  }
+
   if (key === 'queryInfo') {
     const customer = findCustomer(customers, groups[0]);
-    if (!customer) return { ok: false, message: `I couldn't find a customer matching ${groups[0]}.` };
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
     ctx.navigate('/customers');
+    const statusLbl = STATUS_LABELS[lang]?.[customer.status] || customer.status;
+    const payLbl = STATUS_LABELS[lang]?.[customer.paymentStatus] || customer.paymentStatus;
     return {
       ok: true,
-      message: `${customer.name}: package ${customer.package || 'not set'}, monthly fee ${money(
-        customer.monthlyFee
-      )}, pending dues ${money(customer.pendingDues || 0)}, status ${customer.status}, payment ${customer.paymentStatus}.`,
+      message: t(
+        lang,
+        'customerInfo',
+        customer,
+        customer.package || '-',
+        money(customer.monthlyFee),
+        money(customer.pendingDues || 0),
+        statusLbl,
+        payLbl
+      ),
     };
   }
 
   if (key === 'queryDues') {
     const customer = findCustomer(customers, groups[0]);
-    if (!customer) return { ok: false, message: `I couldn't find a customer matching ${groups[0]}.` };
-    return { ok: true, message: `${customer.name} owes ${money(customer.pendingDues || 0)}.` };
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
+    return { ok: true, message: t(lang, 'owes', customer.name, money(customer.pendingDues || 0)) };
   }
 
   if (key === 'openCustomerDetail') {
     const rawName = groups[0];
     const customer = findCustomer(customers, rawName);
-    if (!customer) return { ok: false, message: `I couldn't find a customer matching ${rawName}.` };
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     setPendingCustomerTarget({ customerId: customer.customerId, mongoId: customer._id }, 'view');
     ctx.navigate('/customers');
-    return { ok: true, message: `Opening ${customer.name}'s profile.` };
+    return { ok: true, message: t(lang, 'openingProfile', customer.name) };
   }
 
   if (key === 'addCustomer') {
-    // Pull the name out of the remainder up to the first known slot keyword.
     const remainder = groups[0].trim();
-    if (!remainder) {
-      return {
-        ok: false,
-        message: 'Sure - what is the customer\'s name and monthly fee? For example: "add customer Ahmed with fee 1500".',
-      };
-    }
-    const nameMatch = remainder.match(/^(.+?)(?:\s+with)?(?:\s+(?:package|fee|phone)\b|$)/i);
-    const name = cleanName(nameMatch ? nameMatch[1] : remainder);
-    if (!name) {
-      return {
-        ok: false,
-        message: 'I got the fee but missed the name. Try: "add customer Ahmed with fee 1500".',
-      };
-    }
+    if (!remainder) return { ok: false, message: t(lang, 'askNameFee') };
 
-    const packageMatch = remainder.match(/package\s+([a-z0-9\s]+?)(?=\s+(?:fee|phone)\b|$)/i);
-    const feeMatch = remainder.match(/(?:monthly\s+)?fee\s+([\w\s]+?)(?=\s+(?:phone|package)\b|$)/i);
-    const phoneMatch = remainder.match(/phone(?:\s+number)?\s+([\d\s]+)/i);
+    const nameMatch = remainder.match(/^(.+?)(?:\s+with)?(?:\s+(?:package|fee)\b|$)/i);
+    const name = cleanName(nameMatch ? nameMatch[1] : remainder);
+    if (!name) return { ok: false, message: t(lang, 'missedName') };
+
+    const packageMatch = remainder.match(/package\s+([a-z0-9\s]+?)(?=\s+(?:fee|phone|address)\b|$)/i);
+    const feeMatch = remainder.match(/fee\s+([\w\s]+?)(?=\s+(?:phone|package|address)\b|$)/i);
+    const phoneMatch = remainder.match(/phone\s+([\d\s]+)/i);
+    const addressMatch = remainder.match(/address\s+(.+?)(?=\s+(?:fee|package|phone)\b|$)/i);
 
     const monthlyFee = feeMatch ? wordsToNumber(feeMatch[1]) : null;
-    if (monthlyFee == null) {
-      return {
-        ok: false,
-        message: `Got the name ${name} - now what's the monthly fee? Try: "add customer ${name} with fee 1500".`,
-      };
-    }
+    if (monthlyFee == null) return { ok: false, message: t(lang, 'askFee', name) };
 
     const today = new Date();
     const payload = {
@@ -316,76 +548,103 @@ export async function runVoiceCommand(transcript, ctx) {
       connectionDate: String(today.getDate()),
       package: packageMatch ? packageMatch[1].trim() : '',
       phone: phoneMatch ? phoneMatch[1].replace(/\s+/g, '') : '',
+      address: addressMatch ? addressMatch[1].trim() : '',
       status: 'Active',
       paymentStatus: 'Unpaid',
     };
 
     await ctx.API.post('/customers', payload);
     ctx.refreshCustomers();
-    return { ok: true, message: `Added new customer ${name} with a monthly fee of ${money(monthlyFee)}.` };
+    return { ok: true, message: t(lang, 'addedCustomer', name, money(monthlyFee)) };
   }
 
   if (key === 'setBill') {
     const [rawName, rawValue] = groups;
     const customer = findCustomer(customers, rawName);
-    if (!customer) return { ok: false, message: `I couldn't find a customer matching ${rawName}.` };
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     const amount = wordsToNumber(rawValue);
-    if (amount == null) return { ok: false, message: `I didn't catch the amount for ${customer.name}.` };
+    if (amount == null) return { ok: false, message: t(lang, 'missedAmount', customer.name) };
     const before = customer.monthlyFee;
     await ctx.API.put(`/customers/${customer._id}`, { monthlyFee: amount });
     ctx.refreshCustomers();
-    return { ok: true, message: `Updated ${customer.name}'s bill from ${money(before)} to ${money(amount)}.` };
+    return { ok: true, message: t(lang, 'updatedBill', customer.name, money(before), money(amount)) };
   }
 
   if (key === 'setDues') {
     const [rawName, rawValue] = groups;
     const customer = findCustomer(customers, rawName);
-    if (!customer) return { ok: false, message: `I couldn't find a customer matching ${rawName}.` };
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     const amount = wordsToNumber(rawValue);
-    if (amount == null) return { ok: false, message: `I didn't catch the amount for ${customer.name}.` };
+    if (amount == null) return { ok: false, message: t(lang, 'missedAmount', customer.name) };
     await ctx.API.put(`/customers/${customer._id}`, { pendingDues: amount });
     ctx.refreshCustomers();
-    return { ok: true, message: `Set ${customer.name}'s pending dues to ${money(amount)}.` };
+    return { ok: true, message: t(lang, 'setDues', customer.name, money(amount)) };
   }
 
   if (key === 'addDues') {
     let [rawValue, rawName] = groups;
     if (order && order[0] === 'name') [rawName, rawValue] = groups;
     const customer = findCustomer(customers, rawName);
-    if (!customer) return { ok: false, message: `I couldn't find a customer matching ${rawName}.` };
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     const amount = wordsToNumber(rawValue);
-    if (amount == null) return { ok: false, message: `I didn't catch that amount.` };
+    if (amount == null) return { ok: false, message: t(lang, 'missedAmount', rawName) };
     const newDues = (customer.pendingDues || 0) + amount;
     await ctx.API.put(`/customers/${customer._id}`, { pendingDues: newDues });
     ctx.refreshCustomers();
-    return { ok: true, message: `Added ${money(amount)} to ${customer.name}'s dues. New balance is ${money(newDues)}.` };
+    return { ok: true, message: t(lang, 'addedDues', money(amount), customer.name, money(newDues)) };
+  }
+
+  if (key === 'setPackage') {
+    const [rawName, rawPkg] = groups;
+    const customer = findCustomer(customers, rawName);
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
+    const pkg = rawPkg.trim();
+    await ctx.API.put(`/customers/${customer._id}`, { package: pkg });
+    ctx.refreshCustomers();
+    return { ok: true, message: t(lang, 'packageUpdated', customer.name, pkg) };
+  }
+
+  if (key === 'setPhone') {
+    const [rawName, rawPhone] = groups;
+    const customer = findCustomer(customers, rawName);
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
+    const phone = rawPhone.replace(/[^\d]/g, '');
+    await ctx.API.put(`/customers/${customer._id}`, { phone });
+    ctx.refreshCustomers();
+    return { ok: true, message: t(lang, 'phoneUpdated', customer.name) };
+  }
+
+  if (key === 'setAddress') {
+    const [rawName, rawAddress] = groups;
+    const customer = findCustomer(customers, rawName);
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
+    await ctx.API.put(`/customers/${customer._id}`, { address: rawAddress.trim() });
+    ctx.refreshCustomers();
+    return { ok: true, message: t(lang, 'addressUpdated', customer.name) };
   }
 
   if (key === 'setStatus') {
     const [rawName, rawStatus] = groups;
     const customer = findCustomer(customers, rawName);
-    if (!customer) return { ok: false, message: `I couldn't find a customer matching ${rawName}.` };
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     const normalized = rawStatus.toLowerCase().replace(/\s+/g, '');
     const statusMap = { active: 'Active', cutoff: 'Cut Off', disabled: 'Disable', disable: 'Disable' };
     const status = statusMap[normalized];
-    if (!status) return { ok: false, message: `I don't recognize the status ${rawStatus}.` };
+    if (!status) return { ok: false, message: t(lang, 'unknownStatus', rawStatus) };
     await ctx.API.put(`/customers/${customer._id}`, { status });
     ctx.refreshCustomers();
-    return { ok: true, message: `${customer.name}'s status is now ${status}.` };
+    return { ok: true, message: t(lang, 'statusUpdated', customer.name, STATUS_LABELS[lang]?.[status] || status) };
   }
 
   if (key === 'markPaid') {
     const customer = findCustomer(customers, groups[0]);
-    if (!customer) return { ok: false, message: `I couldn't find a customer matching ${groups[0]}.` };
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
     await ctx.API.put(`/customers/${customer._id}`, { paymentStatus: 'Paid', pendingDues: 0 });
     try {
       await ctx.API.post('/payments', {
-        receiptNumber: `VC-${Date.now()}`,
         customerId: customer.customerId,
-        customerName: customer.name,
         amount: customer.monthlyFee,
         billingMonth: new Date().toLocaleString('en-US', { month: 'long' }),
-        billingYear: new Date().getFullYear(),
         method: 'Cash',
         notes: 'Recorded via voice command',
       });
@@ -393,16 +652,16 @@ export async function runVoiceCommand(transcript, ctx) {
       // Payment log is best-effort; the customer status update is what matters most.
     }
     ctx.refreshCustomers();
-    return { ok: true, message: `Marked ${customer.name} as paid and cleared their dues.` };
+    return { ok: true, message: t(lang, 'markedPaid', customer.name) };
   }
 
   if (key === 'markUnpaid') {
     const customer = findCustomer(customers, groups[0]);
-    if (!customer) return { ok: false, message: `I couldn't find a customer matching ${groups[0]}.` };
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
     await ctx.API.put(`/customers/${customer._id}`, { paymentStatus: 'Unpaid' });
     ctx.refreshCustomers();
-    return { ok: true, message: `Marked ${customer.name} as unpaid.` };
+    return { ok: true, message: t(lang, 'markedUnpaid', customer.name) };
   }
 
-  return { ok: false, message: "I understood the command type but couldn't complete it." };
+  return { ok: false, message: t(lang, 'genericError') };
 }

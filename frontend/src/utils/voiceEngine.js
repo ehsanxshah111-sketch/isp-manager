@@ -43,15 +43,26 @@ export function createRecognizer({ onResult, onEnd, onError, lang = 'en-US' }) {
 
 /**
  * Speaks a short response back to the user. Nothing is stored anywhere.
+ * Pass the BCP-47 lang code (e.g. "ur-PK") that matches the reply text so
+ * the browser picks a matching voice when one is installed on the device.
  */
-export function speak(text, { rate = 1.02, pitch = 1 } = {}) {
+export function speak(text, { rate = 1.0, pitch = 1, lang = 'en-US' } = {}) {
   if (!isSpeakingSupported() || !text) return;
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
   utter.rate = rate;
   utter.pitch = pitch;
+  utter.lang = lang;
+
   const voices = window.speechSynthesis.getVoices();
-  const preferred = voices.find((v) => /en-US|en-GB/i.test(v.lang));
+  const shortLang = lang.split('-')[0].toLowerCase();
+  const preferred =
+    voices.find((v) => v.lang?.toLowerCase() === lang.toLowerCase()) ||
+    voices.find((v) => v.lang?.toLowerCase().startsWith(shortLang));
+  // If the device has no Urdu/Punjabi voice installed, the browser falls
+  // back to its default voice - the text is still correct, it just won't
+  // be spoken with native pronunciation. Chrome/Android usually ship one;
+  // desktop Windows/Mac often don't unless a language pack is installed.
   if (preferred) utter.voice = preferred;
   window.speechSynthesis.speak(utter);
 }

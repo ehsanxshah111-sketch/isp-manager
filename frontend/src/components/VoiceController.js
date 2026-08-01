@@ -48,6 +48,7 @@ const VoiceController = () => {
           navigate,
           getCustomers,
           refreshCustomers,
+          lang,
         });
         setLastReply(result.message);
         if (result.ok) {
@@ -55,17 +56,17 @@ const VoiceController = () => {
         } else {
           toast.error(result.message, { duration: 4500 });
         }
-        speak(result.message);
+        speak(result.message, { lang: VOICE_LANGUAGES[lang].code });
       } catch (err) {
         const msg = err.response?.data?.message || 'Something went wrong running that command.';
         setLastReply(msg);
         toast.error(msg);
-        speak(msg);
+        speak(msg, { lang: VOICE_LANGUAGES[lang].code });
       } finally {
         setStatus('idle');
       }
     },
-    [navigate, getCustomers, refreshCustomers]
+    [navigate, getCustomers, refreshCustomers, lang]
   );
 
   // Starts (or restarts) one recognition session. Chrome/Edge sometimes end
