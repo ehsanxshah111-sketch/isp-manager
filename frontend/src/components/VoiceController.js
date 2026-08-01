@@ -16,7 +16,10 @@ const VoiceController = () => {
   const langOrder = ['en', 'ur', 'pa'];
 
   const recognizerRef = useRef(null);
-  const finalTranscriptRef = useRef('');
+  const finalTranscriptRef = useRef(''); // accumulated across auto-restarts
+  const interimRef = useRef('');
+  const isHeldRef = useRef(false); // true from press-down until actual release
+  const restartTimeoutRef = useRef(null);
   const customersCacheRef = useRef(null); // in-memory only, never persisted
   const navigate = useNavigate();
 
@@ -30,13 +33,6 @@ const VoiceController = () => {
 
   const refreshCustomers = useCallback(() => {
     customersCacheRef.current = null; // force a fresh read next time it's needed
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      recognizerRef.current && recognizerRef.current.stop();
-      stopSpeaking();
-    };
   }, []);
 
   const handleFinalTranscript = useCallback(
@@ -72,6 +68,64 @@ const VoiceController = () => {
     [navigate, getCustomers, refreshCustomers]
   );
 
+  // Starts (or restarts) one recognition session. Chrome/Edge sometimes end
+  // a session on their own after a short pause even while the button is
+  // still held - when that happens and the user hasn't actually released
+  // the button, we transparently start a new session and keep appending to
+  // the same transcript, so a slightly slower sentence never gets cut off.
+  const beginSession = useCallback(() => {
+    const recognizer = createRecognizer({
+      lang: VOICE_LANGUAGES[lang].code,
+      onResult: (text, isFinal) => {
+        interimRef.current = text;
+        setTranscript([finalTranscriptRef.current, text].filter(Boolean).join(' '));
+        if (isFinal) {
+          finalTranscriptRef.current = [finalTranscriptRef.current, text].filter(Boolean).join(' ');
+          interimRef.current = '';
+        }
+      },
+      onError: (error) => {
+        if (error === 'no-speech' || error === 'aborted') return;
+        isHeldRef.current = false;
+        setStatus('error');
+        toast.error('Microphone error: ' + error);
+      },
+      onEnd: () => {
+        if (isHeldRef.current) {
+          // Still holding the button - the browser stopped on its own, resume.
+          restartTimeoutRef.current = setTimeout(() => {
+            if (isHeldRef.current) {
+              recognizerRef.current = beginSession();
+            }
+          }, 120);
+        } else {
+          const finalText = [finalTranscriptRef.current, interimRef.current].filter(Boolean).join(' ');
+          handleFinalTranscript(finalText);
+        }
+      },
+    });
+
+    if (!recognizer) {
+      setStatus('error');
+      return null;
+    }
+    try {
+      recognizer.start();
+    } catch (e) {
+      // start() throws if called twice in a row - safe to ignore
+    }
+    return recognizer;
+  }, [lang, handleFinalTranscript]);
+
+  useEffect(() => {
+    return () => {
+      isHeldRef.current = false;
+      if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
+      recognizerRef.current && recognizerRef.current.stop();
+      stopSpeaking();
+    };
+  }, []);
+
   const startListening = useCallback(() => {
     if (!supported) {
       toast.error('Voice control needs Chrome or Edge on this device.');
@@ -79,57 +133,48 @@ const VoiceController = () => {
     }
     stopSpeaking();
     finalTranscriptRef.current = '';
+    interimRef.current = '';
     setTranscript('');
     setLastReply('');
     setStatus('listening');
-
-    const recognizer = createRecognizer({
-      lang: VOICE_LANGUAGES[lang].code,
-      onResult: (text, isFinal) => {
-        setTranscript(text);
-        if (isFinal) finalTranscriptRef.current = text;
-      },
-      onError: (error) => {
-        if (error === 'no-speech') return;
-        setStatus('error');
-        toast.error('Microphone error: ' + error);
-      },
-      onEnd: () => {},
-    });
-
-    if (!recognizer) {
-      setStatus('error');
-      return;
-    }
-
-    recognizerRef.current = recognizer;
-    try {
-      recognizer.start();
-    } catch (e) {
-      // start() throws if called twice in a row - safe to ignore
-    }
-  }, [supported, lang]);
+    isHeldRef.current = true;
+    recognizerRef.current = beginSession();
+  }, [supported, beginSession]);
 
   const stopListening = useCallback(() => {
+    isHeldRef.current = false;
+    if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
     if (recognizerRef.current) {
       recognizerRef.current.stop();
       recognizerRef.current = null;
+    } else {
+      // Nothing was actively running (rare race) - finalize with what we have.
+      const finalText = [finalTranscriptRef.current, interimRef.current].filter(Boolean).join(' ');
+      handleFinalTranscript(finalText);
     }
-    const finalText = finalTranscriptRef.current || transcript;
-    handleFinalTranscript(finalText);
-  }, [transcript, handleFinalTranscript]);
+  }, [handleFinalTranscript]);
 
-  // Press-and-hold handlers - voice control is ONLY active while held down
+  // Press-and-hold handlers - voice control is ONLY active while held down.
+  // We listen for the "release" on window (not just the button) so a small
+  // amount of finger/mouse drift off the button never cuts you off mid-sentence.
   const handlePressStart = (e) => {
     e.preventDefault();
     if (status === 'listening' || status === 'processing') return;
     startListening();
   };
-  const handlePressEnd = (e) => {
-    e.preventDefault();
-    if (status !== 'listening') return;
-    stopListening();
-  };
+
+  useEffect(() => {
+    if (status !== 'listening') return undefined;
+    const release = () => stopListening();
+    window.addEventListener('mouseup', release);
+    window.addEventListener('touchend', release);
+    window.addEventListener('touchcancel', release);
+    return () => {
+      window.removeEventListener('mouseup', release);
+      window.removeEventListener('touchend', release);
+      window.removeEventListener('touchcancel', release);
+    };
+  }, [status, stopListening]);
 
   const cycleLanguage = () => {
     if (status !== 'idle') return; // don't switch mid-listen
@@ -167,10 +212,7 @@ const VoiceController = () => {
         type="button"
         className={`voice-fab voice-fab-${status}`}
         onMouseDown={handlePressStart}
-        onMouseUp={handlePressEnd}
-        onMouseLeave={handlePressEnd}
         onTouchStart={handlePressStart}
-        onTouchEnd={handlePressEnd}
         title={supported ? statusLabel : 'Voice control not supported in this browser'}
         aria-label="Hold to give a voice command"
       >

@@ -158,7 +158,7 @@ const PATTERNS = [
   },
   {
     key: 'addCustomer',
-    regex: /^add(?:\s+a)?(?:\s+new)?\s+customer(?:\s+(?:named|called))?\s+(.+)/i,
+    regex: /^(?:please\s+)?add(?:\s+a)?(?:\s+new)?\s+customer(?:\s+(?:named|called))?\s*(.*)$/i,
   },
   {
     key: 'setBill',
@@ -279,10 +279,21 @@ export async function runVoiceCommand(transcript, ctx) {
 
   if (key === 'addCustomer') {
     // Pull the name out of the remainder up to the first known slot keyword.
-    const remainder = groups[0];
+    const remainder = groups[0].trim();
+    if (!remainder) {
+      return {
+        ok: false,
+        message: 'Sure - what is the customer\'s name and monthly fee? For example: "add customer Ahmed with fee 1500".',
+      };
+    }
     const nameMatch = remainder.match(/^(.+?)(?:\s+with)?(?:\s+(?:package|fee|phone)\b|$)/i);
     const name = cleanName(nameMatch ? nameMatch[1] : remainder);
-    if (!name) return { ok: false, message: "I didn't catch the customer's name." };
+    if (!name) {
+      return {
+        ok: false,
+        message: 'I got the fee but missed the name. Try: "add customer Ahmed with fee 1500".',
+      };
+    }
 
     const packageMatch = remainder.match(/package\s+([a-z0-9\s]+?)(?=\s+(?:fee|phone)\b|$)/i);
     const feeMatch = remainder.match(/(?:monthly\s+)?fee\s+([\w\s]+?)(?=\s+(?:phone|package)\b|$)/i);
@@ -292,7 +303,7 @@ export async function runVoiceCommand(transcript, ctx) {
     if (monthlyFee == null) {
       return {
         ok: false,
-        message: `I need a monthly fee to add ${name}. Try: "add customer ${name} with fee 1500".`,
+        message: `Got the name ${name} - now what's the monthly fee? Try: "add customer ${name} with fee 1500".`,
       };
     }
 
