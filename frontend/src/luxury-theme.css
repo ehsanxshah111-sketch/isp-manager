@@ -1,0 +1,139 @@
+/* ============================================================
+   LUXURY THEME OVERLAY
+   Adds a premium navy + gold identity on top of the existing
+   design without rewriting every page. Pure CSS - no DB impact.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --lux-navy: #0b2b4a;
+  --lux-navy-deep: #061a30;
+  --lux-gold: #d4af37;
+  --lux-gold-soft: #e8c766;
+  --lux-gold-deep: #b8860b;
+  --lux-ink: #0f172a;
+}
+
+body, .layout, input, select, textarea, button {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ---------- Sidebar: deep navy with a gold hairline ---------- */
+.sidebar {
+  background: linear-gradient(180deg, var(--lux-navy) 0%, var(--lux-navy-deep) 100%) !important;
+  border-right: 1px solid rgba(212, 175, 55, 0.25);
+}
+
+.sidebar-brand {
+  border-bottom: 1px solid rgba(212, 175, 55, 0.25) !important;
+}
+
+.brand-text {
+  background: linear-gradient(90deg, var(--lux-gold-soft), var(--lux-gold));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: 0.3px;
+}
+
+.nav-item.active {
+  background: linear-gradient(90deg, var(--lux-gold-deep), var(--lux-gold)) !important;
+  color: var(--lux-ink) !important;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(212, 175, 55, 0.35);
+}
+
+.nav-item:hover {
+  background: rgba(212, 175, 55, 0.12) !important;
+}
+
+/* ---------- Top bar: glassy, floating ---------- */
+.top-bar {
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.85) !important;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.25) !important;
+}
+
+html.dark-mode .top-bar {
+  background: rgba(15, 23, 42, 0.85) !important;
+}
+
+.theme-toggle-btn,
+.toggle-btn,
+.mobile-toggle {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.theme-toggle-btn:hover,
+.toggle-btn:hover,
+.mobile-toggle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(212, 175, 55, 0.25);
+}
+
+/* ---------- Buttons: gold primary accent ---------- */
+.btn-primary,
+.save-btn {
+  background: linear-gradient(135deg, var(--lux-gold-deep), var(--lux-gold)) !important;
+  border: none !important;
+  color: var(--lux-ink) !important;
+  font-weight: 700 !important;
+  box-shadow: 0 4px 14px rgba(212, 175, 55, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.2s ease !important;
+}
+.btn-primary:hover,
+.save-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(212, 175, 55, 0.45);
+}
+
+/* ---------- Cards & stat tiles: subtle lift + gold edge ---------- */
+.card,
+.stat-card,
+.settings-card,
+.table-container {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease !important;
+}
+.stat-card:hover,
+.card:hover,
+.settings-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px rgba(11, 43, 74, 0.12) !important;
+  border-color: rgba(212, 175, 55, 0.35) !important;
+}
+
+.stat-value {
+  background: linear-gradient(90deg, var(--lux-navy), var(--lux-gold-deep));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ---------- Modals: glass backdrop ---------- */
+.modal-overlay {
+  backdrop-filter: blur(4px);
+  background: rgba(6, 26, 48, 0.55) !important;
+}
+.modal {
+  border-top: 3px solid var(--lux-gold);
+  box-shadow: 0 20px 60px rgba(6, 26, 48, 0.35) !important;
+}
+
+/* ---------- User avatar ring ---------- */
+.user-avatar-initials,
+.top-bar-avatar-initials {
+  box-shadow: 0 0 0 2px var(--lux-gold);
+}
+
+/* ---------- Scrollbar polish ---------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.45);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

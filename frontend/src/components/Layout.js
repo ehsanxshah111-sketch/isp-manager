@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
+import VoiceController from './VoiceController';
 import './Layout.css';
 
 const Layout = () => {
@@ -366,6 +367,9 @@ const Layout = () => {
           </div>
         </div>
       )}
+
+      {/* Push-to-talk voice controller - only listens while the button is held */}
+      <VoiceController />
     </div>
   );
 };

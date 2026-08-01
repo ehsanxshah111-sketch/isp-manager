@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
+import { consumePendingCustomerTarget } from '../utils/voiceBus';
 
 const Customers = () => {
   const [customers, setCustomers] = useState([]);
@@ -25,13 +26,27 @@ const Customers = () => {
 
   useEffect(() => {
     loadCustomers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadCustomers = async () => {
     try {
       setLoading(true);
       const res = await API.get('/customers?limit=1000');
-      setCustomers(res.data.data);
+      const list = res.data.data;
+      setCustomers(list);
+
+      // If a voice command navigated here wanting a specific customer opened
+      // (e.g. "open John's profile"), do that now that we have the list.
+      const pending = consumePendingCustomerTarget();
+      if (pending) {
+        const found = list.find(
+          (c) =>
+            (pending.target.mongoId && c._id === pending.target.mongoId) ||
+            (pending.target.customerId && c.customerId === pending.target.customerId)
+        );
+        if (found) openEditModal(found);
+      }
     } catch (error) {
       toast.error('Failed to load customers');
       console.error('Error:', error);
