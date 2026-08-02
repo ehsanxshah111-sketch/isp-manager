@@ -404,6 +404,60 @@ function wordsToNumber(text) {
   return found ? total + current : null;
 }
 
+// ------------------------------------------------------------
+// Flexible expense parsing.
+// Instead of requiring one exact sentence shape ("add expense
+// of X for Y"), this pulls the amount (digits OR spoken number
+// words, wherever they sit in the sentence) and treats whatever
+// text is left over - once filler/command words are stripped -
+// as the title. That means "add expense 500 diesel", "expense
+// of five hundred for diesel", "diesel expense 500 rupees" all
+// resolve to the same { amount: 500, title: "diesel" }.
+// ------------------------------------------------------------
+function extractExpenseDetails(normalizedText) {
+  let working = normalizedText
+    .replace(/\b(please|can you|could you|i want to|i want you to|kindly|record|log|create|new)\b/gi, ' ')
+    .replace(/\badds?\b/gi, ' ')
+    .replace(/\bexpense[s]?\b/gi, ' ')
+    .replace(/\b(of|for|on|worth|amount|rs\.?|rupees?)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  let amount = null;
+
+  const digitMatch = working.match(/\d[\d,]*(\.\d+)?/);
+  if (digitMatch) {
+    amount = parseFloat(digitMatch[0].replace(/,/g, ''));
+    working = (working.slice(0, digitMatch.index) + ' ' + working.slice(digitMatch.index + digitMatch[0].length))
+      .replace(/\s+/g, ' ')
+      .trim();
+  } else {
+    // No digits - look for a contiguous run of spoken number words
+    // ANYWHERE in the sentence (not just at the start/end), since
+    // people put the amount before or after the item interchangeably.
+    const tokens = working.split(/\s+/).filter(Boolean);
+    let start = -1;
+    let end = -1;
+    for (let i = 0; i < tokens.length; i++) {
+      const lc = tokens[i].toLowerCase();
+      if (lc in SMALL_NUMBERS || lc in SCALE_NUMBERS) {
+        if (start === -1) start = i;
+        end = i;
+      } else if (start !== -1) {
+        break;
+      }
+    }
+    if (start !== -1) {
+      amount = wordsToNumber(tokens.slice(start, end + 1).join(' '));
+      tokens.splice(start, end - start + 1);
+      working = tokens.join(' ').trim();
+    }
+  }
+
+  const title = working.replace(/^(a|an|the)\s+/i, '').trim();
+  return { amount, title };
+}
+
 function cleanName(raw) {
   return raw
     .replace(/'s$/i, '')
@@ -515,7 +569,7 @@ const PATTERNS = [
   { key: 'queryStat', statKey: 'paid', regex: /how many paid customers?/i },
   { key: 'queryStat', statKey: 'totalRevenue', regex: /(?:what(?:'s| is) )?(?:my |the )?total revenue/i },
   { key: 'queryStat', statKey: 'totalDues', regex: /(?:what(?:'s| is) )?(?:my |the )?total dues/i },
-  { key: 'queryStat', statKey: 'totalExpenses', regex: /(?:what(?:'s| is) )?(?:my |the )?total expenses/i },
+  { key: 'queryStat', statKey: 'totalExpenses', regex: /(?:what(?:'s| is) )?(?:my |the )?total expenses?/i },
   { key: 'queryStat', statKey: 'netProfit', regex: /(?:what(?:'s| is) )?(?:my |the )?net profit/i },
   { key: 'queryStat', statKey: 'collected', regex: /(?:what(?:'s| is) )?(?:my |the )?(?:amount collected|total collected)/i },
   { key: 'queryStat', statKey: 'pendingCollection', regex: /(?:what(?:'s| is) )?(?:my |the )?pending collection/i },
@@ -551,8 +605,26 @@ const PATTERNS = [
   { key: 'queryInfo', regex: /(?:finds?|search(?:es)? for|looks?\s+up)\s+(?:customers?\s+)?(.+)/i },
 ];
 
+// Anything that mentions "expense" but is really a stats question
+// ("total expenses", "how much did I spend this month" style) should
+// still fall through to the queryStat patterns instead of being
+// grabbed by the flexible expense-adder below.
+const EXPENSE_STAT_QUESTION_RE = /\b(total|how much|what(?:'s| is)|net profit|report)\b/i;
+
 function matchCommand(transcript) {
   const text = normalizeMultilingual(transcript.trim().replace(/[.?!]+$/, ''));
+
+  // Expense-adding is highly free-form in real speech ("add expense of
+  // 500 for diesel", "500 diesel expense", "expense diesel five hundred
+  // rupees"...) so instead of forcing one exact sentence shape, pull the
+  // amount and title out wherever they land and go straight to adding it.
+  if (/\bexpense\b/i.test(text) && !EXPENSE_STAT_QUESTION_RE.test(text)) {
+    const { amount, title } = extractExpenseDetails(text);
+    if (amount != null) {
+      return { key: 'addExpense', groups: [String(amount), title] };
+    }
+  }
+
   for (const p of PATTERNS) {
     const m = text.match(p.regex);
     if (m) return { key: p.key, groups: m.slice(1), order: p.order, statKey: p.statKey };
@@ -570,6 +642,12 @@ function extractLooseName(text) {
 function looseIntentFallback(text) {
   const hasWord = (w) => new RegExp('\\b' + w + '\\b', 'i').test(text);
 
+  if (hasWord('expense')) {
+    const { amount, title } = extractExpenseDetails(text);
+    // Even with no amount caught, route to addExpense so the reply is a
+    // helpful "what's the amount?" prompt instead of a flat "didn't understand".
+    return { key: 'addExpense', groups: [amount != null ? String(amount) : '', title] };
+  }
   if (hasWord('delete') || hasWord('remove')) {
     const name = extractLooseName(text);
     if (name) return { key: 'deleteCustomer', groups: [name] };
@@ -685,7 +763,26 @@ export async function runVoiceCommand(transcript, ctx) {
     return runParsedCommand(freshMatch, ctx, lang, setPending);
   }
 
-  const match = matchCommand(transcript) || looseIntentFallback(normalizeMultilingual(transcript.trim().replace(/[.?!]+$/, '')));
+  const normalized = normalizeMultilingual(transcript.trim().replace(/[.?!]+$/, ''));
+  let match = matchCommand(transcript) || looseIntentFallback(normalized);
+
+  if (!match) {
+    // Last resort: no command word matched at all - but the client almost
+    // certainly just said (or the mic mis-heard) a customer's name on its
+    // own, e.g. "Ahmed Khan" with no "open"/"show" in front of it. If that
+    // name resolves to a real customer, open their profile instead of
+    // making the person repeat themselves with a keyword.
+    try {
+      const customers = await ctx.getCustomers();
+      const candidate = extractLooseName(normalized) || normalized;
+      if (candidate && findCustomer(customers, candidate)) {
+        match = { key: 'openCustomerDetail', groups: [candidate] };
+      }
+    } catch (e) {
+      // ignore - falls through to notUnderstood below
+    }
+  }
+
   if (!match) {
     return { ok: false, message: t(lang, 'notUnderstood', transcript) };
   }
@@ -718,10 +815,11 @@ async function runParsedCommand(match, ctx, lang, setPending) {
 
   if (key === 'addExpense') {
     let [rawValue, rawTitle] = groups;
-    const amount = wordsToNumber(rawValue);
+    const amount = wordsToNumber(rawValue || '');
     if (amount == null) return { ok: false, message: t(lang, 'expenseMissingAmount') };
-    const title = (rawTitle || '').trim();
-    if (!title) return { ok: false, message: t(lang, 'expenseMissingTitle') };
+    // Amount is the only hard requirement - if no title/category came
+    // through, still record the expense rather than refusing outright.
+    const title = (rawTitle || '').trim() || 'General';
     const category = guessExpenseCategory(title);
     await ctx.API.post('/expenses', { title, amount, category, description: 'Added via voice command' });
     return { ok: true, message: t(lang, 'addedExpense', money(amount), title, category) };
