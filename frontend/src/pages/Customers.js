@@ -304,17 +304,24 @@ const Customers = () => {
       if (res.data.success) {
         const links = res.data.data || [];
         setBulkResults(links);
-        // Open every selected chat right away. Most browsers allow several
-        // window.open calls fired synchronously from the same click, but if
-        // yours blocks some of them, every row below still has its own
-        // "Open" button so nobody gets missed.
+        // A ready-to-send WhatsApp draft (message pre-filled) is generated
+        // for every selected customer right away - none of them are left
+        // out. Browsers only ever allow ONE new tab to open automatically
+        // per click (anything past that gets silently blocked as a popup),
+        // so we open just the first chat here and leave a one-tap "Open"
+        // button below for every other customer - that always works,
+        // because each tap is its own click, not an automated loop.
         const opened = {};
-        links.forEach((item) => {
-          window.open(item.whatsappUrl, '_blank');
-          opened[item.customerId] = true;
-        });
+        if (links.length > 0) {
+          window.open(links[0].whatsappUrl, '_blank');
+          opened[links[0].customerId] = true;
+        }
         setBulkOpenedIds(opened);
-        toast.success(`Opened WhatsApp for ${links.length} customer${links.length === 1 ? '' : 's'}! Tap Send inside each chat.`);
+        if (links.length > 1) {
+          toast.success(`Draft ready for all ${links.length} customers. First chat opened - tap 📤 Open next to each other name below to send theirs.`);
+        } else if (links.length === 1) {
+          toast.success('WhatsApp chat opened. Tap Send inside it.');
+        }
       }
     } catch (error) {
       toast.error('Failed to send bulk reminders');
@@ -513,8 +520,11 @@ const Customers = () => {
           <div className="modal bulk-wa-modal" onClick={(e) => e.stopPropagation()}>
             <h3>📱 Bulk WhatsApp Reminders</h3>
             <p className="bulk-wa-hint">
-              Only unpaid customers with a phone number are listed. WhatsApp still needs a manual tap on
-              <strong> Send</strong> inside each chat it opens - that's a WhatsApp rule, not something any app can skip.
+              Only unpaid customers with a phone number are listed. Clicking "Send to Selected" prepares a
+              ready-to-send message draft for every one of them and opens the first chat. Browsers only allow one
+              chat to open automatically per click, so tap <strong>📤 Open</strong> next to each remaining name
+              below to open their draft too - then tap <strong>Send</strong> inside WhatsApp, which is a WhatsApp
+              rule no app can skip.
             </p>
 
             <div className="bulk-wa-dayfilter">

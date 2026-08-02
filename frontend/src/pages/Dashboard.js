@@ -54,7 +54,6 @@ const Dashboard = () => {
     { label: 'Total Revenue (Active Only)', value: `PKR ${stats.totalRevenue.toLocaleString()}`, color: 'blue' },
     { label: 'Total Dues (All Customers)', value: `PKR ${stats.totalDues.toLocaleString()}`, color: 'red' },
     { label: 'Total Recovery (All Customers)', value: `PKR ${(stats.totalRecovery ?? stats.totalDues).toLocaleString()}`, color: 'orange' },
-    { label: 'Written Off (Cut Off/Disabled)', value: `PKR ${(stats.cutOffDues ?? 0).toLocaleString()}`, color: 'gray' },
     { label: 'Collected', value: `PKR ${stats.collected.toLocaleString()}`, color: 'green' },
     { label: 'Pending Collection', value: `PKR ${stats.pendingCollection.toLocaleString()}`, color: 'orange' },
     { label: 'Total Expenses', value: `PKR ${stats.totalExpenses.toLocaleString()}`, color: 'red' },
