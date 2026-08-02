@@ -192,8 +192,47 @@ html.dark-mode .mobile-toggle {
   font-weight: 600;
   color: #1a2a3a;
   margin: 0;
-  flex: 1;
+  flex: 0 0 auto;
   transition: color 0.3s ease;
+}
+
+/* ===== SLIDING HEADER BANNER ===== */
+.header-banner-wrap {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  overflow: hidden;
+  position: relative;
+  margin: 0 16px;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+}
+
+.header-banner-track {
+  display: inline-flex;
+  white-space: nowrap;
+  position: absolute;
+  left: 0;
+  top: 0;
+  animation: header-banner-slide 16s linear infinite;
+  will-change: transform;
+}
+
+.header-banner-track span {
+  padding-right: 64px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--lux-gold, #d4af37);
+}
+
+@keyframes header-banner-slide {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+html.dark-mode .header-banner-track span {
+  color: var(--lux-gold-soft, #e8c766);
 }
 
 .top-bar-actions {
@@ -298,6 +337,10 @@ html.dark-mode .mobile-toggle {
     font-size: 16px !important;
     flex: 1;
     margin-left: 0;
+  }
+
+  .header-banner-wrap {
+    display: none !important;
   }
 
   /* Top bar actions mobile */

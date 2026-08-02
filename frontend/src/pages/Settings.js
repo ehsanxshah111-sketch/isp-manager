@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
+import { publishBannerText } from '../utils/bannerBus';
 
 const Settings = () => {
   const [user, setUser] = useState(null);
@@ -21,6 +22,25 @@ const Settings = () => {
 
   const [usernameSuccess, setUsernameSuccess] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
+
+  const [bannerText, setBannerText] = useState('');
+  const [bannerSuccess, setBannerSuccess] = useState('');
+  const [savingBanner, setSavingBanner] = useState(false);
+
+  // ===== LOAD HEADER BANNER TEXT =====
+  const loadBanner = useCallback(async () => {
+    try {
+      const res = await API.get('/settings');
+      setBannerText(res.data?.data?.bannerText || '');
+    } catch (error) {
+      // Non-critical - the header just keeps whatever it already has.
+      console.error('Error loading banner text:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBanner();
+  }, [loadBanner]);
 
   // ===== LOAD USER FUNCTION =====
   const loadUser = useCallback(async () => {
@@ -148,6 +168,32 @@ const Settings = () => {
     }
   };
 
+  // ===== SAVE HEADER BANNER TEXT =====
+  const handleBannerSubmit = async (e) => {
+    e.preventDefault();
+    setBannerSuccess('');
+
+    if (!bannerText || !bannerText.trim()) {
+      toast.error('Banner text cannot be empty');
+      return;
+    }
+
+    setSavingBanner(true);
+    try {
+      const res = await API.put('/settings', { bannerText: bannerText.trim() });
+      if (res.data.success) {
+        toast.success('Header banner updated!');
+        setBannerSuccess('✅ Banner updated - it\'s now sliding in the header for everyone.');
+        setBannerText(res.data.data.bannerText);
+        publishBannerText(res.data.data.bannerText);
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update banner text');
+    } finally {
+      setSavingBanner(false);
+    }
+  };
+
   if (loading) {
     return <div className="loading">Loading settings...</div>;
   }
@@ -255,6 +301,38 @@ const Settings = () => {
             </div>
             <button type="submit" className="btn btn-primary" disabled={updating}>
               {updating ? 'Updating...' : '🔒 Change Password'}
+            </button>
+          </form>
+        </div>
+
+        {/* HEADER BANNER TEXT */}
+        <div className="settings-card">
+          <div className="settings-card-header">
+            <span className="settings-icon">📢</span>
+            <div>
+              <h3>Header Banner</h3>
+              <p>The sliding text shown at the top of every page</p>
+            </div>
+          </div>
+
+          {bannerSuccess && (
+            <div className="success-message">{bannerSuccess}</div>
+          )}
+
+          <form onSubmit={handleBannerSubmit}>
+            <div className="form-group">
+              <label>Banner Text</label>
+              <input
+                type="text"
+                value={bannerText}
+                onChange={(e) => setBannerText(e.target.value)}
+                placeholder="e.g. Welcome AT Muhammad Shah Panel"
+                required
+              />
+              <small>This scrolls across the header for every user, on every device</small>
+            </div>
+            <button type="submit" className="btn btn-primary" disabled={savingBanner}>
+              {savingBanner ? 'Saving...' : '📢 Update Banner'}
             </button>
           </form>
         </div>

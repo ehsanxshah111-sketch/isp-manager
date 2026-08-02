@@ -61,12 +61,21 @@ const ExpenseSchema = new mongoose.Schema({
   description: { type: String, default: '' }
 }, { timestamps: true });
 
+// Single shared document (key: 'global') holding app-wide settings, e.g. the
+// sliding text shown in the header. Lives on the server (not localStorage) so
+// every admin/device sees the same banner.
+const AppSettingSchema = new mongoose.Schema({
+  key: { type: String, default: 'global', unique: true },
+  bannerText: { type: String, default: 'Welcome AT Muhammad Shah Panel' }
+}, { timestamps: true });
+
 // Reuse existing models on hot-reload / repeated invocation instead of
 // throwing "Cannot overwrite model once compiled".
 const User = mongoose.models.User || mongoose.model('User', UserSchema);
 const Customer = mongoose.models.Customer || mongoose.model('Customer', CustomerSchema);
 const Payment = mongoose.models.Payment || mongoose.model('Payment', PaymentSchema);
 const Expense = mongoose.models.Expense || mongoose.model('Expense', ExpenseSchema);
+const AppSetting = mongoose.models.AppSetting || mongoose.model('AppSetting', AppSettingSchema);
 
 // =====================================================
 // DATABASE (cached connection so it survives warm
@@ -560,6 +569,40 @@ app.get('/api/dashboard', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('Dashboard error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// =====================================================
+// APP SETTINGS (header banner text, etc.)
+// One shared document for the whole app - not per-user - so
+// every admin/device sees the same header banner.
+// =====================================================
+app.get('/api/settings', auth, async (req, res) => {
+  try {
+    let setting = await AppSetting.findOne({ key: 'global' });
+    if (!setting) {
+      setting = await AppSetting.create({ key: 'global' });
+    }
+    res.json({ success: true, data: setting });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.put('/api/settings', auth, async (req, res) => {
+  try {
+    const { bannerText } = req.body;
+    if (typeof bannerText !== 'string' || !bannerText.trim()) {
+      return res.status(400).json({ success: false, message: 'Banner text cannot be empty' });
+    }
+    const setting = await AppSetting.findOneAndUpdate(
+      { key: 'global' },
+      { bannerText: bannerText.trim() },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, data: setting });
+  } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });

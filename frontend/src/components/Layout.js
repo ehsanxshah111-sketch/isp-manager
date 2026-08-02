@@ -4,12 +4,14 @@ import { useAuth } from '../context/AuthContext';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
 import VoiceController from './VoiceController';
+import { subscribeBannerText } from '../utils/bannerBus';
 import './Layout.css';
 
 const Layout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [profilePicture, setProfilePicture] = useState('');
+  const [bannerText, setBannerText] = useState('Welcome AT Muhammad Shah Panel');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [editName, setEditName] = useState('');
@@ -34,6 +36,28 @@ const Layout = () => {
       setProfilePicture(user.profilePicture || '');
     }
   }, [user]);
+
+  // Load the sliding header banner text (shared across every device, stored
+  // server-side) and keep it live-synced if it's edited on the Settings page
+  // while this Layout is already mounted.
+  useEffect(() => {
+    let cancelled = false;
+    API.get('/settings')
+      .then((res) => {
+        const text = res.data?.data?.bannerText;
+        if (!cancelled && text) setBannerText(text);
+      })
+      .catch(() => {
+        // Non-critical - keep the default banner text if this fails.
+      });
+    const unsubscribe = subscribeBannerText((text) => {
+      if (!cancelled) setBannerText(text);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
 
   // Close sidebar on mobile when route changes
   useEffect(() => {
@@ -242,7 +266,14 @@ const Layout = () => {
           </button>
 
           <h1>{menuItems.find(item => item.path === location.pathname)?.label || 'Dashboard'}</h1>
-          
+
+          <div className="header-banner-wrap">
+            <div className="header-banner-track">
+              <span>{bannerText}</span>
+              <span aria-hidden="true">{bannerText}</span>
+            </div>
+          </div>
+
           <div className="top-bar-actions">
             <button className="theme-toggle-btn" onClick={toggleDarkMode}>
               {darkMode ? '☀️ Light' : '🌙 Dark'}
