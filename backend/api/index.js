@@ -69,6 +69,26 @@ const AppSettingSchema = new mongoose.Schema({
   bannerText: { type: String, default: 'Welcome AT Muhammad Shah Panel' }
 }, { timestamps: true });
 
+// Audit trail: one document per change to a customer's record - who did it,
+// exactly which fields moved from what to what, and when (via timestamps).
+// This is intentionally append-only (nothing here ever gets edited/deleted
+// by the app itself) so it can be trusted as a compliance record.
+const ActivityLogSchema = new mongoose.Schema({
+  user: { type: String, default: 'Unknown' },        // readable username, not just an ID
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  action: { type: String, required: true },          // e.g. "Customer Updated"
+  module: { type: String, enum: ['Customers', 'Payments', 'Expenses', 'Auth', 'System'], default: 'Customers' },
+  entityType: { type: String, default: '' },         // e.g. "Customer"
+  entityId: { type: mongoose.Schema.Types.ObjectId }, // the customer's _id this entry is about
+  changes: [{
+    field: String,
+    from: mongoose.Schema.Types.Mixed,
+    to: mongoose.Schema.Types.Mixed
+  }],
+  details: { type: String, default: '' },            // human-readable one-line summary
+  ip: { type: String, default: '' }
+}, { timestamps: true });
+
 // Reuse existing models on hot-reload / repeated invocation instead of
 // throwing "Cannot overwrite model once compiled".
 const User = mongoose.models.User || mongoose.model('User', UserSchema);
@@ -76,6 +96,7 @@ const Customer = mongoose.models.Customer || mongoose.model('Customer', Customer
 const Payment = mongoose.models.Payment || mongoose.model('Payment', PaymentSchema);
 const Expense = mongoose.models.Expense || mongoose.model('Expense', ExpenseSchema);
 const AppSetting = mongoose.models.AppSetting || mongoose.model('AppSetting', AppSettingSchema);
+const ActivityLog = mongoose.models.ActivityLog || mongoose.model('ActivityLog', ActivityLogSchema);
 
 // =====================================================
 // DATABASE (cached connection so it survives warm
@@ -114,7 +135,7 @@ app.use(async (req, res, next) => {
 // =====================================================
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 
-const auth = (req, res, next) => {
+const auth = async (req, res, next) => {
   const token = req.header('Authorization')?.replace('Bearer ', '');
   if (!token) {
     return res.status(401).json({ success: false, message: 'No token provided. Access denied.' });
@@ -122,11 +143,61 @@ const auth = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.userId = decoded.id;
+    req.username = decoded.username;
+    if (!req.username) {
+      // Token was issued before usernames were embedded in it - look it up
+      // once so audit-log entries still show a name instead of a raw ID.
+      const u = await User.findById(decoded.id).select('username');
+      req.username = u?.username || 'Unknown';
+    }
     next();
   } catch (error) {
     return res.status(401).json({ success: false, message: 'Invalid or expired token. Please login again.' });
   }
 };
+
+// Records one audit-trail entry. Never throws into the caller - a logging
+// hiccup should never block the actual customer change from saving.
+const logActivity = async ({ req, action, module = 'Customers', entityType = '', entityId = null, changes = [], details = '' }) => {
+  try {
+    await ActivityLog.create({
+      user: req.username || 'Unknown',
+      userId: req.userId,
+      action,
+      module,
+      entityType,
+      entityId,
+      changes,
+      details,
+      ip: req.headers['x-forwarded-for'] || req.socket?.remoteAddress || ''
+    });
+  } catch (e) {
+    console.error('Activity log error:', e.message);
+  }
+};
+
+// Fields tracked for the customer change-history / audit log feature.
+const CUSTOMER_TRACKED_FIELDS = [
+  'name', 'customerId', 'package', 'monthlyFee', 'connectionDate',
+  'pendingDues', 'phone', 'address', 'status', 'paymentStatus'
+];
+
+function diffCustomerFields(oldDoc, newBody) {
+  const changes = [];
+  for (const field of CUSTOMER_TRACKED_FIELDS) {
+    if (!(field in newBody)) continue;
+    const oldVal = oldDoc[field] ?? '';
+    const newVal = newBody[field] ?? '';
+    if (String(oldVal) !== String(newVal)) {
+      changes.push({ field, from: oldVal, to: newVal });
+    }
+  }
+  return changes;
+}
+
+function formatChanges(changes) {
+  return changes.map(c => `${c.field}: "${c.from}" \u2192 "${c.to}"`).join('; ');
+}
 
 // =====================================================
 // HELPERS
@@ -170,7 +241,7 @@ app.post('/api/auth/login', async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ success: false, message: 'Invalid password' });
 
-    const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
     res.json({
       token,
       user: { id: user._id, username: user.username, email: user.email, role: user.role }
@@ -209,7 +280,7 @@ app.put('/api/auth/change-username', auth, async (req, res) => {
       { new: true }
     ).select('-password');
 
-    const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ success: true, token, user });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -330,6 +401,15 @@ app.post('/api/customers', auth, async (req, res) => {
   try {
     const customer = new Customer(req.body);
     await customer.save();
+
+    await logActivity({
+      req,
+      action: 'Customer Added',
+      entityType: 'Customer',
+      entityId: customer._id,
+      details: `Added customer ${customer.name} (${customer.customerId})`
+    });
+
     res.status(201).json({ success: true, data: customer });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -338,8 +418,26 @@ app.post('/api/customers', auth, async (req, res) => {
 
 app.put('/api/customers/:id', auth, async (req, res) => {
   try {
+    const existing = await Customer.findById(req.params.id);
+    if (!existing) return res.status(404).json({ success: false, message: 'Customer not found' });
+
+    // Snapshot exactly what's changing BEFORE the update overwrites it, so
+    // the audit trail can show old value -> new value for every field.
+    const changes = diffCustomerFields(existing, req.body);
+
     const customer = await Customer.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
+
+    if (changes.length > 0) {
+      await logActivity({
+        req,
+        action: 'Customer Updated',
+        entityType: 'Customer',
+        entityId: customer._id,
+        changes,
+        details: `Updated ${customer.name} (${customer.customerId}): ${formatChanges(changes)}`
+      });
+    }
+
     res.json({ success: true, data: customer });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -350,7 +448,30 @@ app.delete('/api/customers/:id', auth, async (req, res) => {
   try {
     const customer = await Customer.findByIdAndDelete(req.params.id);
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
+
+    await logActivity({
+      req,
+      action: 'Customer Deleted',
+      entityType: 'Customer',
+      entityId: customer._id,
+      details: `Deleted customer ${customer.name} (${customer.customerId}) - pending dues at time of deletion: PKR ${customer.pendingDues || 0}`
+    });
+
     res.json({ success: true, message: 'Customer deleted' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @desc  Full change history for one customer - who changed what and when.
+//        Kept even after the customer is deleted (entityId still matches),
+//        so this doubles as the compliance record for removed accounts.
+app.get('/api/customers/:id/history', auth, async (req, res) => {
+  try {
+    const logs = await ActivityLog.find({ entityType: 'Customer', entityId: req.params.id })
+      .sort({ createdAt: -1 })
+      .limit(300);
+    res.json({ success: true, data: logs });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -528,6 +649,14 @@ app.get('/api/dashboard', auth, async (req, res) => {
 
     const totalRevenue = customers.reduce((sum, c) => sum + (c.monthlyFee || 0), 0);
     const totalDues = customers.reduce((sum, c) => sum + (c.pendingDues || 0), 0);
+    // Total Recovery = money still realistically collectible - only from
+    // customers who are still Active. The instant a customer is Cut Off or
+    // Disabled, their pending dues drop out of this figure (cutOffDues below
+    // is exactly that removed amount, kept visible for the record).
+    const totalRecovery = customers
+      .filter(c => c.status === 'Active')
+      .reduce((sum, c) => sum + (c.pendingDues || 0), 0);
+    const cutOffDues = totalDues - totalRecovery;
     const collected = customers
       .filter(c => c.paymentStatus === 'Paid' || c.paymentStatus === '1 YEAR ADVANCED')
       .reduce((sum, c) => sum + (c.monthlyFee || 0), 0);
@@ -567,6 +696,8 @@ app.get('/api/dashboard', auth, async (req, res) => {
           unpaid,
           totalRevenue,
           totalDues,
+          totalRecovery,
+          cutOffDues,
           collected,
           pendingCollection,
           totalExpenses,

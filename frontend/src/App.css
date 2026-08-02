@@ -2194,6 +2194,23 @@ html.dark-mode .account-value {
   width: 560px;
 }
 
+.history-modal {
+  width: 560px;
+}
+
+.history-row {
+  padding: 12px 14px;
+}
+
+.history-row .bulk-wa-row-detail {
+  color: #3a4f66;
+  margin: 4px 0;
+}
+
+html.dark-mode .history-row .bulk-wa-row-detail {
+  color: #c9d6e3;
+}
+
 .bulk-wa-hint {
   font-size: 12.5px;
   color: #6b7f99;

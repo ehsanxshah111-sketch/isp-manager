@@ -2,8 +2,8 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../utils/api';
-import { isVoiceSupported, createRecognizer, speak, stopSpeaking, isIOS } from '../utils/voiceEngine';
-import { runVoiceCommand, VOICE_LANGUAGES } from '../utils/voiceCommands';
+import { isVoiceSupported, createRecognizer, speak, stopSpeaking, isIOS, isTouchDevice } from '../utils/voiceEngine';
+import { runVoiceCommand, VOICE_LANGUAGES, collapseRepeatedSpeech } from '../utils/voiceCommands';
 import './VoiceController.css';
 
 // Status: 'idle' | 'listening' | 'processing' | 'error'
@@ -108,9 +108,15 @@ const VoiceController = () => {
         setStatus('idle');
         return;
       }
+      // Defensive cleanup: if the phone's speech engine looped the whole
+      // sentence back several times, collapse it to one copy before it's
+      // shown or acted on, instead of choking on "open customer open
+      // customer open customer" and reporting the customer as not found.
+      const cleaned = collapseRepeatedSpeech(text);
+      setTranscript(cleaned);
       setStatus('processing');
       try {
-        await executeTranscript(text);
+        await executeTranscript(cleaned);
       } catch (err) {
         const msg = err.response?.data?.message || 'Something went wrong running that command.';
         setLastReply(msg);
@@ -150,11 +156,31 @@ const VoiceController = () => {
   const beginSession = useCallback(() => {
     const recognizer = createRecognizer({
       lang: VOICE_LANGUAGES[lang].code,
+      // Laptop (mouse/trackpad): native continuous mode works correctly, so
+      // keep it - fewer restarts, smoother long sentences. Phones/tablets:
+      // Chrome on Android has a known bug where continuous=true makes it
+      // re-fire the same recognized phrase repeatedly. Turning continuous
+      // off there means each session yields one clean final result, and the
+      // onEnd handler below (already built for this) starts the next
+      // session immediately - same "keep listening while held" behavior,
+      // without the buggy loop.
+      continuous: !isTouchDevice(),
       onResult: (text, isFinal) => {
         interimRef.current = text;
         setTranscript([finalTranscriptRef.current, text].filter(Boolean).join(' '));
         if (isFinal) {
-          finalTranscriptRef.current = [finalTranscriptRef.current, text].filter(Boolean).join(' ');
+          const chunk = text.trim();
+          if (chunk) {
+            // Guard against the engine re-emitting the exact same final
+            // chunk it just gave us (seen on some Android builds even with
+            // continuous mode off) - only append if it's genuinely new.
+            const prevWords = finalTranscriptRef.current.split(' ').filter(Boolean);
+            const chunkWords = chunk.split(' ').filter(Boolean);
+            const prevTail = prevWords.slice(-chunkWords.length).join(' ');
+            if (prevTail.toLowerCase() !== chunk.toLowerCase()) {
+              finalTranscriptRef.current = [finalTranscriptRef.current, chunk].filter(Boolean).join(' ');
+            }
+          }
           interimRef.current = '';
         }
       },

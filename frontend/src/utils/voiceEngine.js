@@ -36,12 +36,20 @@ export function isIOS() {
  * Creates a one-shot recognizer. Call .start() on press, .stop() on release.
  * onResult(transcript, isFinal) fires as speech is recognized.
  */
-export function createRecognizer({ onResult, onEnd, onError, lang = 'en-US' }) {
+export function createRecognizer({ onResult, onEnd, onError, lang = 'en-US', continuous = true }) {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) return null;
 
   const recognizer = new SpeechRecognition();
-  recognizer.continuous = true;
+  // Chrome/Edge on a laptop handles continuous=true correctly - one session
+  // keeps listening through natural pauses. Chrome on Android has a
+  // long-standing bug where continuous=true makes the engine re-fire the
+  // same recognized phrase over and over (this is exactly the "repeats
+  // sentences/words 10 times" symptom on phones). The caller passes
+  // continuous:false on touch devices instead, and relies on the onEnd
+  // restart-loop below (already built for this) to string sessions together
+  // manually - same end result, without the buggy native loop.
+  recognizer.continuous = continuous;
   recognizer.interimResults = true;
   recognizer.lang = lang;
   recognizer.maxAlternatives = 1;

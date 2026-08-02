@@ -35,6 +35,34 @@
 
 import { setPendingCustomerTarget } from './voiceBus';
 
+// Android Chrome's speech engine occasionally repeats the whole sentence
+// back several times in a row (a known engine quirk, not something the
+// person actually said) - "open customer open customer open customer".
+// That breaks every anchored command pattern below and falls through to a
+// hapless "customer not found". If the ENTIRE transcript is just the same
+// short phrase tiled back-to-back, collapse it down to one copy before any
+// command matching runs. Exported so the UI layer can clean up what it
+// displays/speaks too, not just what gets matched.
+export function collapseRepeatedSpeech(text) {
+  const trimmed = (text || '').trim().replace(/\s+/g, ' ');
+  if (!trimmed) return trimmed;
+  const words = trimmed.split(' ');
+  const n = words.length;
+  for (let len = 1; len <= Math.floor(n / 2); len++) {
+    if (n % len !== 0) continue;
+    const phrase = words.slice(0, len).join(' ');
+    let tiles = true;
+    for (let i = len; i < n; i += len) {
+      if (words.slice(i, i + len).join(' ').toLowerCase() !== phrase.toLowerCase()) {
+        tiles = false;
+        break;
+      }
+    }
+    if (tiles && n / len >= 2) return phrase;
+  }
+  return trimmed;
+}
+
 export const VOICE_LANGUAGES = {
   en: { code: 'en-US', label: 'English' },
   ur: { code: 'ur-PK', label: 'Urdu' },
@@ -106,6 +134,7 @@ const MULTILINGUAL_KEYWORDS = [
   [/\b(kitne customer|kitne gahak|کتنے کسٹمر|کتنے گاہک)\b/gi, 'how many customers'],
   [/\b(kul aamdani|کل آمدنی)\b/gi, 'total revenue'],
   [/\b(kul baqaya|kul bakaya|کل بقایا)\b/gi, 'total dues'],
+  [/\b(kul wasooli|kul vasooli|کل وصولی)\b/gi, 'total recovery'],
   [/\b(kul kharcha|کل اخراجات)\b/gi, 'total expenses'],
   [/\b(khalis munafa|خالص منافع)\b/gi, 'net profit'],
 
@@ -194,6 +223,7 @@ const STAT_LABELS = {
   paid: { en: 'customers marked as paid', ur: 'ادا شدہ کسٹمرز', pa: 'ਅਦਾ ਕੀਤੇ ਗਾਹਕ', money: false },
   totalRevenue: { en: 'total monthly revenue', ur: 'کل ماہانہ آمدنی', pa: 'ਕੁੱਲ ਮਹੀਨਾਵਾਰ ਆਮਦਨ', money: true },
   totalDues: { en: 'total pending dues', ur: 'کل بقایا رقم', pa: 'ਕੁੱਲ ਬਕਾਇਆ', money: true },
+  totalRecovery: { en: 'total recovery amount', ur: 'کل وصولی رقم', pa: 'ਕੁੱਲ ਵਸੂਲੀ ਰਕਮ', money: true },
   totalExpenses: { en: 'total expenses', ur: 'کل اخراجات', pa: 'ਕੁੱਲ ਖਰਚੇ', money: true },
   netProfit: { en: 'net profit', ur: 'خالص منافع', pa: 'ਸ਼ੁੱਧ ਮੁਨਾਫ਼ਾ', money: true },
   collected: { en: 'amount collected', ur: 'وصول شدہ رقم', pa: 'ਵਸੂਲ ਕੀਤੀ ਰਕਮ', money: true },
@@ -615,6 +645,7 @@ const PATTERNS = [
   { key: 'queryStat', statKey: 'paid', regex: /how many paid customers?/i },
   { key: 'queryStat', statKey: 'totalRevenue', regex: /(?:what(?:'s| is) )?(?:my |the )?total revenue/i },
   { key: 'queryStat', statKey: 'totalDues', regex: /(?:what(?:'s| is) )?(?:my |the )?total dues/i },
+  { key: 'queryStat', statKey: 'totalRecovery', regex: /(?:what(?:'s| is) )?(?:my |the )?total recovery/i },
   { key: 'queryStat', statKey: 'totalExpenses', regex: /(?:what(?:'s| is) )?(?:my |the )?total expenses?/i },
   { key: 'queryStat', statKey: 'netProfit', regex: /(?:what(?:'s| is) )?(?:my |the )?net profit/i },
   { key: 'queryStat', statKey: 'collected', regex: /(?:what(?:'s| is) )?(?:my |the )?(?:amount collected|total collected)/i },
@@ -788,7 +819,8 @@ async function executeConfirmedAction(pending, ctx, lang) {
   return { ok: false, message: t(lang, 'genericError') };
 }
 
-export async function runVoiceCommand(transcript, ctx) {
+export async function runVoiceCommand(rawTranscript, ctx) {
+  const transcript = collapseRepeatedSpeech(rawTranscript);
   const lang = ctx.lang && MESSAGES[ctx.lang] ? ctx.lang : 'en';
   const setPending = ctx.setPendingConfirmation || (() => {});
 
