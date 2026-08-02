@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
+import { getPageCache, setPageCache } from '../utils/pageCache';
+import RefreshButton from '../components/RefreshButton';
 
 const Payments = () => {
-  const [payments, setPayments] = useState([]);
-  const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const cachedPayments = getPageCache('payments');
+  const [payments, setPayments] = useState(cachedPayments?.payments || []);
+  const [summary, setSummary] = useState(cachedPayments?.summary || null);
+  const [loading, setLoading] = useState(!cachedPayments);
+  const [refreshing, setRefreshing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingPayment, setEditingPayment] = useState(null);
-  const [customers, setCustomers] = useState([]);
+  const [customers, setCustomers] = useState(cachedPayments?.customers || []);
   const [formData, setFormData] = useState({
     customerId: '',
     amount: '',
@@ -28,12 +32,14 @@ const Payments = () => {
     loadPayments();
     loadSummary();
     loadCustomers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadPayments = async () => {
     try {
       const res = await API.get('/payments');
       setPayments(res.data.data);
+      setPageCache('payments', { ...(getPageCache('payments') || {}), payments: res.data.data });
     } catch (error) {
       toast.error('Failed to load payments');
       console.error('Error:', error);
@@ -44,6 +50,7 @@ const Payments = () => {
     try {
       const res = await API.get('/payments/summary');
       setSummary(res.data.data);
+      setPageCache('payments', { ...(getPageCache('payments') || {}), summary: res.data.data });
     } catch (error) {
       console.error('Error loading summary:', error);
     }
@@ -53,11 +60,20 @@ const Payments = () => {
     try {
       const res = await API.get('/customers');
       setCustomers(res.data.data);
+      setPageCache('payments', { ...(getPageCache('payments') || {}), customers: res.data.data });
     } catch (error) {
       console.error('Error loading customers:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Used by the manual refresh button - re-fetches everything on this page
+  // without touching any other page or the whole site.
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([loadPayments(), loadSummary(), loadCustomers()]);
+    setRefreshing(false);
   };
 
   const handleInputChange = (e) => {
@@ -132,9 +148,12 @@ const Payments = () => {
     <div className="payments-page">
       <div className="page-header">
         <h2 className="page-title">Payments</h2>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          ➕ Record Payment
-        </button>
+        <div className="header-buttons">
+          <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
+          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+            ➕ Record Payment
+          </button>
+        </div>
       </div>
 
       {summary && (

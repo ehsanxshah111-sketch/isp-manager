@@ -667,7 +667,14 @@ app.get('/api/dashboard', auth, async (req, res) => {
     const paid = customers.filter(c => c.paymentStatus === 'Paid' || c.paymentStatus === '1 YEAR ADVANCED').length;
     const unpaid = customers.filter(c => c.paymentStatus === 'Unpaid').length;
 
-    const totalRevenue = customers.reduce((sum, c) => sum + (c.monthlyFee || 0), 0);
+    // Total Revenue = recurring income from customers who are still Active.
+    // The instant a customer is Cut Off or Disabled, their monthly fee drops
+    // out of this figure (and out of Net Profit, since that's derived from
+    // this) - that's the "cut" the client wants to see when someone is
+    // disabled.
+    const totalRevenue = customers
+      .filter(c => c.status === 'Active')
+      .reduce((sum, c) => sum + (c.monthlyFee || 0), 0);
     const totalDues = customers.reduce((sum, c) => sum + (c.pendingDues || 0), 0);
 
     // What's actually still owed by a customer = their tracked arrears
@@ -676,12 +683,11 @@ app.get('/api/dashboard', auth, async (req, res) => {
     // live in monthlyFee + paymentStatus, not pendingDues.
     const amountOwed = (c) => (c.pendingDues || 0) + (c.paymentStatus === 'Unpaid' ? (c.monthlyFee || 0) : 0);
 
-    // Total Recovery = money still realistically collectible - only from
-    // customers who are still Active. The instant a customer is Cut Off or
-    // Disabled, their owed amount drops out of this figure and shows up in
-    // cutOffDues instead (kept visible for the record, not hidden).
+    // Total Recovery = everything still owed, from EVERY customer regardless
+    // of status. Cutting someone off or disabling them doesn't erase what
+    // they owe - you still want to recover it - so unlike Total Revenue
+    // above, this figure does NOT drop when a customer's status changes.
     const totalRecovery = customers
-      .filter(c => c.status === 'Active')
       .reduce((sum, c) => sum + amountOwed(c), 0);
     const cutOffDues = customers
       .filter(c => c.status !== 'Active')

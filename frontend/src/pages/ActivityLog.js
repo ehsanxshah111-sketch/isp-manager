@@ -1,31 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
+import { getPageCache, setPageCache } from '../utils/pageCache';
+import RefreshButton from '../components/RefreshButton';
 
 // Company-wide audit trail - who changed what, and when. This is the
 // general log (every customer, newest first); the 🕘 button on a single
 // customer row in the Customers page shows this same data scoped to just
 // that one customer.
 const ActivityLog = () => {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedLogs = getPageCache('activityLog');
+  const [logs, setLogs] = useState(cachedLogs || []);
+  const [loading, setLoading] = useState(!cachedLogs);
+  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [filterAction, setFilterAction] = useState('all');
 
   useEffect(() => {
     loadLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadLogs = async () => {
+  const loadLogs = async (isManualRefresh = false) => {
     try {
-      setLoading(true);
+      if (isManualRefresh) setRefreshing(true);
+      else if (!cachedLogs) setLoading(true);
       const res = await API.get('/activity-logs?limit=500');
       setLogs(res.data.data || []);
+      setPageCache('activityLog', res.data.data || []);
     } catch (error) {
       toast.error('Failed to load activity log');
       console.error('Error:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -49,6 +57,7 @@ const ActivityLog = () => {
     <div className="activity-log-page">
       <div className="page-header">
         <h2 className="page-title">🕘 Activity Log ({logs.length})</h2>
+        <RefreshButton onRefresh={() => loadLogs(true)} refreshing={refreshing} />
       </div>
 
       <p className="bulk-wa-hint">

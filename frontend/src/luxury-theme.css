@@ -48,6 +48,95 @@ body, .layout, input, select, textarea, button {
   background: rgba(212, 175, 55, 0.12) !important;
 }
 
+/* ---------- Sidebar nav: icon chips + a bit of hover motion ---------- */
+.nav-item {
+  transition: background 0.2s ease, transform 0.15s ease, color 0.2s ease;
+}
+
+.nav-item:hover {
+  transform: translateX(3px);
+}
+
+.nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.05);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.nav-item:hover .nav-icon {
+  background: rgba(212, 175, 55, 0.22);
+  transform: scale(1.06);
+}
+
+.nav-item.active .nav-icon {
+  background: rgba(15, 23, 42, 0.14);
+}
+
+.nav-label {
+  letter-spacing: 0.2px;
+}
+
+/* ---------- Sidebar brand: soft gold glow behind the logo ---------- */
+.sidebar-brand {
+  position: relative;
+  overflow: hidden;
+}
+
+.sidebar-brand::after {
+  content: '';
+  position: absolute;
+  top: -40px;
+  left: -20px;
+  width: 140px;
+  height: 140px;
+  background: radial-gradient(circle, rgba(212, 175, 55, 0.22), transparent 70%);
+  pointer-events: none;
+}
+
+.brand-icon-img {
+  box-shadow: 0 0 0 1px rgba(212, 175, 55, 0.4), 0 4px 12px rgba(212, 175, 55, 0.25);
+}
+
+/* ---------- Sidebar footer: a distinct little panel, gold-ringed avatar,
+   and a logout button that actually reads as a destructive action on
+   hover instead of just another gray button ---------- */
+.sidebar-footer {
+  border-top: 1px solid rgba(212, 175, 55, 0.25) !important;
+}
+
+.user-info {
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(212, 175, 55, 0.16);
+}
+
+.user-avatar-img {
+  border-color: rgba(212, 175, 55, 0.55) !important;
+}
+
+.user-avatar-img:hover {
+  border-color: var(--lux-gold) !important;
+}
+
+.logout-btn {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(212, 175, 55, 0.16) !important;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.15s ease !important;
+}
+
+.logout-btn:hover {
+  background: rgba(220, 53, 69, 0.18) !important;
+  color: #ff9b9b !important;
+  border-color: rgba(220, 53, 69, 0.4) !important;
+  transform: translateY(-1px);
+}
+
 /* ---------- Top bar: glassy, floating ---------- */
 .top-bar {
   backdrop-filter: blur(10px);

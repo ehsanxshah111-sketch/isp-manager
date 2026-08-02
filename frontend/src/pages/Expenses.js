@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
+import { getPageCache, setPageCache } from '../utils/pageCache';
+import RefreshButton from '../components/RefreshButton';
 
 const Expenses = () => {
-  const [expenses, setExpenses] = useState([]);
-  const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const cachedExpenses = getPageCache('expenses');
+  const [expenses, setExpenses] = useState(cachedExpenses?.expenses || []);
+  const [summary, setSummary] = useState(cachedExpenses?.summary || null);
+  const [loading, setLoading] = useState(!cachedExpenses);
+  const [refreshing, setRefreshing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
@@ -18,12 +22,14 @@ const Expenses = () => {
   useEffect(() => {
     loadExpenses();
     loadSummary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadExpenses = async () => {
     try {
       const res = await API.get('/expenses');
       setExpenses(res.data.data);
+      setPageCache('expenses', { ...(getPageCache('expenses') || {}), expenses: res.data.data });
     } catch (error) {
       toast.error('Failed to load expenses');
       console.error('Error:', error);
@@ -36,9 +42,17 @@ const Expenses = () => {
     try {
       const res = await API.get('/expenses/summary');
       setSummary(res.data.data);
+      setPageCache('expenses', { ...(getPageCache('expenses') || {}), summary: res.data.data });
     } catch (error) {
       console.error('Error loading summary:', error);
     }
+  };
+
+  // Used by the manual refresh button.
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([loadExpenses(), loadSummary()]);
+    setRefreshing(false);
   };
 
   const handleInputChange = (e) => {
@@ -81,9 +95,12 @@ const Expenses = () => {
     <div className="expenses-page">
       <div className="page-header">
         <h2 className="page-title">Expenses</h2>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          ➕ Add Expense
-        </button>
+        <div className="header-buttons">
+          <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
+          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+            ➕ Add Expense
+          </button>
+        </div>
       </div>
 
       {summary && (

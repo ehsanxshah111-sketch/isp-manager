@@ -2,10 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
 import { consumePendingCustomerTarget, subscribeCustomerTarget } from '../utils/voiceBus';
+import { getPageCache, setPageCache } from '../utils/pageCache';
+import RefreshButton from '../components/RefreshButton';
 
 const Customers = () => {
-  const [customers, setCustomers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedCustomers = getPageCache('customers');
+  const [customers, setCustomers] = useState(cachedCustomers || []);
+  const [loading, setLoading] = useState(!cachedCustomers);
+  const [refreshing, setRefreshing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [search, setSearch] = useState('');
@@ -72,12 +76,14 @@ const Customers = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadCustomers = async () => {
+  const loadCustomers = async (isManualRefresh = false) => {
     try {
-      setLoading(true);
+      if (isManualRefresh) setRefreshing(true);
+      else if (!cachedCustomers) setLoading(true);
       const res = await API.get('/customers?limit=1000');
       const list = res.data.data;
       setCustomers(list);
+      setPageCache('customers', list);
 
       // If a voice command navigated here wanting a specific customer opened
       // (e.g. "open John's profile"), do that now that we have the list.
@@ -95,6 +101,7 @@ const Customers = () => {
       console.error('Error:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -297,6 +304,7 @@ const Customers = () => {
       <div className="page-header">
         <h2 className="page-title">Customers ({customers.length})</h2>
         <div className="header-buttons">
+          <RefreshButton onRefresh={() => loadCustomers(true)} refreshing={refreshing} />
           <button className="btn btn-whatsapp" onClick={openBulkModal}>
             📱 Bulk WhatsApp
           </button>

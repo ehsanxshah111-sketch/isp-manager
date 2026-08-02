@@ -1,31 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
+import { getPageCache, setPageCache } from '../utils/pageCache';
+import RefreshButton from '../components/RefreshButton';
 
 const Reports = () => {
-  const [customers, setCustomers] = useState([]);
-  const [payments, setPayments] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedReports = getPageCache('reports');
+  const [customers, setCustomers] = useState(cachedReports?.customers || []);
+  const [payments, setPayments] = useState(cachedReports?.payments || []);
+  const [loading, setLoading] = useState(!cachedReports);
+  const [refreshing, setRefreshing] = useState(false);
   const [reportType, setReportType] = useState('customers');
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (isManualRefresh = false) => {
     try {
-      setLoading(true);
+      if (isManualRefresh) setRefreshing(true);
+      else if (!cachedReports) setLoading(true);
       const [customersRes, paymentsRes] = await Promise.all([
         API.get('/customers'),
         API.get('/payments'),
       ]);
       setCustomers(customersRes.data.data);
       setPayments(paymentsRes.data.data);
+      setPageCache('reports', { customers: customersRes.data.data, payments: paymentsRes.data.data });
     } catch (error) {
       toast.error('Failed to load data');
       console.error('Error:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -96,7 +104,10 @@ const Reports = () => {
 
   return (
     <div className="reports-page">
-      <h2 className="page-title">📊 Reports</h2>
+      <div className="page-header-row">
+        <h2 className="page-title">📊 Reports</h2>
+        <RefreshButton onRefresh={() => loadData(true)} refreshing={refreshing} />
+      </div>
 
       <div className="report-selector">
         {reports.map((r) => (

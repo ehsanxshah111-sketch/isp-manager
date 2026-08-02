@@ -2,14 +2,18 @@ import React, { useState, useEffect, useCallback } from 'react';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
 import { publishBannerText } from '../utils/bannerBus';
+import { getPageCache, setPageCache } from '../utils/pageCache';
+import RefreshButton from '../components/RefreshButton';
 
 const Settings = () => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const cachedSettings = getPageCache('settings');
+  const [user, setUser] = useState(cachedSettings?.user || null);
+  const [loading, setLoading] = useState(!cachedSettings);
+  const [refreshing, setRefreshing] = useState(false);
   const [updating, setUpdating] = useState(false);
 
   const [usernameForm, setUsernameForm] = useState({
-    currentUsername: '',
+    currentUsername: cachedSettings?.user?.username || '',
     newUsername: '',
     confirmUsername: ''
   });
@@ -23,7 +27,7 @@ const Settings = () => {
   const [usernameSuccess, setUsernameSuccess] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
 
-  const [bannerText, setBannerText] = useState('');
+  const [bannerText, setBannerText] = useState(cachedSettings?.bannerText || '');
   const [bannerSuccess, setBannerSuccess] = useState('');
   const [savingBanner, setSavingBanner] = useState(false);
 
@@ -31,7 +35,9 @@ const Settings = () => {
   const loadBanner = useCallback(async () => {
     try {
       const res = await API.get('/settings');
-      setBannerText(res.data?.data?.bannerText || '');
+      const text = res.data?.data?.bannerText || '';
+      setBannerText(text);
+      setPageCache('settings', { ...(getPageCache('settings') || {}), bannerText: text });
     } catch (error) {
       // Non-critical - the header just keeps whatever it already has.
       console.error('Error loading banner text:', error);
@@ -43,26 +49,37 @@ const Settings = () => {
   }, [loadBanner]);
 
   // ===== LOAD USER FUNCTION =====
-  const loadUser = useCallback(async () => {
+  const loadUser = useCallback(async (isManualRefresh = false) => {
     try {
-      setLoading(true);
+      if (isManualRefresh) setRefreshing(true);
+      else if (!cachedSettings) setLoading(true);
       const res = await API.get('/auth/me');
       setUser(res.data.user);
       setUsernameForm(prev => ({
         ...prev,
         currentUsername: res.data.user.username || ''
       }));
+      setPageCache('settings', { ...(getPageCache('settings') || {}), user: res.data.user });
     } catch (error) {
       toast.error('Failed to load user data');
       console.error('Error:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     loadUser();
   }, [loadUser]);
+
+  // Used by the manual refresh button - re-fetches both pieces on this page.
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([loadUser(true), loadBanner()]);
+    setRefreshing(false);
+  };
 
   // ===== CHANGE USERNAME =====
   const handleUsernameSubmit = async (e) => {
@@ -200,7 +217,10 @@ const Settings = () => {
 
   return (
     <div className="settings-page">
-      <h2 className="page-title">⚙️ Settings</h2>
+      <div className="page-header-row">
+        <h2 className="page-title">⚙️ Settings</h2>
+        <RefreshButton onRefresh={handleRefresh} refreshing={refreshing} />
+      </div>
 
       <div className="settings-grid">
         {/* CHANGE USERNAME */}

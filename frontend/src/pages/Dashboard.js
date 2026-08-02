@@ -1,29 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
+import { getPageCache, setPageCache } from '../utils/pageCache';
+import RefreshButton from '../components/RefreshButton';
 
 const Dashboard = () => {
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [dailyData, setDailyData] = useState([]);
-  const [recentCustomers, setRecentCustomers] = useState([]);
+  const cached = getPageCache('dashboard');
+  const [stats, setStats] = useState(cached?.stats || null);
+  const [loading, setLoading] = useState(!cached);
+  const [refreshing, setRefreshing] = useState(false);
+  const [dailyData, setDailyData] = useState(cached?.dailyData || []);
+  const [recentCustomers, setRecentCustomers] = useState(cached?.recentCustomers || []);
 
   useEffect(() => {
     loadDashboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadDashboard = async () => {
+  const loadDashboard = async (isManualRefresh = false) => {
     try {
-      setLoading(true);
+      if (isManualRefresh) setRefreshing(true);
+      else if (!cached) setLoading(true);
       const res = await API.get('/dashboard');
-      setStats(res.data.data.stats);
-      setDailyData(res.data.data.dailyData || []);
-      setRecentCustomers(res.data.data.recentCustomers || []);
+      const data = res.data.data;
+      setStats(data.stats);
+      setDailyData(data.dailyData || []);
+      setRecentCustomers(data.recentCustomers || []);
+      setPageCache('dashboard', data);
     } catch (error) {
       toast.error('Failed to load dashboard data');
       console.error('Dashboard error:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -42,9 +51,9 @@ const Dashboard = () => {
     { label: 'Disable', value: stats.disable || 0, color: 'gray' },
     { label: 'Paid', value: stats.paid, color: 'green' },
     { label: 'Unpaid', value: stats.unpaid, color: 'red' },
-    { label: 'Total Revenue', value: `PKR ${stats.totalRevenue.toLocaleString()}`, color: 'blue' },
+    { label: 'Total Revenue (Active Only)', value: `PKR ${stats.totalRevenue.toLocaleString()}`, color: 'blue' },
     { label: 'Total Dues (All Customers)', value: `PKR ${stats.totalDues.toLocaleString()}`, color: 'red' },
-    { label: 'Total Recovery (Active Only)', value: `PKR ${(stats.totalRecovery ?? stats.totalDues).toLocaleString()}`, color: 'orange' },
+    { label: 'Total Recovery (All Customers)', value: `PKR ${(stats.totalRecovery ?? stats.totalDues).toLocaleString()}`, color: 'orange' },
     { label: 'Written Off (Cut Off/Disabled)', value: `PKR ${(stats.cutOffDues ?? 0).toLocaleString()}`, color: 'gray' },
     { label: 'Collected', value: `PKR ${stats.collected.toLocaleString()}`, color: 'green' },
     { label: 'Pending Collection', value: `PKR ${stats.pendingCollection.toLocaleString()}`, color: 'orange' },
@@ -69,7 +78,10 @@ const Dashboard = () => {
 
   return (
     <div className="dashboard-page">
-      <h2 className="page-title">Dashboard Overview</h2>
+      <div className="page-header-row">
+        <h2 className="page-title">Dashboard Overview</h2>
+        <RefreshButton onRefresh={() => loadDashboard(true)} refreshing={refreshing} />
+      </div>
 
       {/* Stats Grid */}
       <div className="stats-grid">
