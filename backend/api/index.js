@@ -20,6 +20,7 @@ const UserSchema = new mongoose.Schema({
   email: { type: String, default: '' },
   fullName: { type: String, default: '' },
   profilePicture: { type: String, default: '' },
+  brandName: { type: String, default: 'ZEEP BROAD BRAND' },
   password: { type: String, required: true },
   role: { type: String, default: 'admin' }
 });
@@ -343,6 +344,30 @@ app.delete('/api/auth/profile-picture', auth, async (req, res) => {
     const user = await User.findByIdAndUpdate(
       req.userId,
       { profilePicture: '' },
+      { new: true }
+    ).select('-password');
+
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    res.json({ success: true, user });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// The text shown top-left of the sidebar (default "ZEEP BROAD BRAND") -
+// kept separate from /auth/update since this is the business's brand
+// name, not the logged-in person's own display name.
+app.put('/api/auth/brand-name', auth, async (req, res) => {
+  try {
+    const { brandName } = req.body;
+    if (!brandName || !brandName.trim()) {
+      return res.status(400).json({ success: false, message: 'Brand name cannot be empty' });
+    }
+    const trimmed = brandName.trim().slice(0, 40);
+
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      { brandName: trimmed },
       { new: true }
     ).select('-password');
 
@@ -678,10 +703,13 @@ app.get('/api/dashboard', auth, async (req, res) => {
     const totalDues = customers.reduce((sum, c) => sum + (c.pendingDues || 0), 0);
 
     // What's actually still owed by a customer = their tracked arrears
-    // (pendingDues) PLUS this month's fee if it hasn't been paid yet. Using
-    // pendingDues alone missed most customers, since day-to-day unpaid fees
-    // live in monthlyFee + paymentStatus, not pendingDues.
-    const amountOwed = (c) => (c.pendingDues || 0) + (c.paymentStatus === 'Unpaid' ? (c.monthlyFee || 0) : 0);
+    // (pendingDues) PLUS this month's fee, but ONLY while they're Active
+    // and unpaid. Once someone is Cut Off or Disabled, no new fee should
+    // keep accruing on top of what they already owed - that's the "don't
+    // add their fee to Total Recovery after cutting them off" fix - but
+    // pendingDues (money genuinely owed from before) is never erased.
+    const amountOwed = (c) =>
+      (c.pendingDues || 0) + (c.status === 'Active' && c.paymentStatus === 'Unpaid' ? (c.monthlyFee || 0) : 0);
 
     // Total Recovery = everything still owed, from EVERY customer regardless
     // of status. Cutting someone off or disabling them doesn't erase what

@@ -124,6 +124,7 @@ const MULTILINGUAL_KEYWORDS = [
 
   // --- pages ---
   [/\b(dashboard|ڈیش بورڈ)\b/gi, 'dashboard'],
+  [/\b(activity ?logs?|سرگرمی لاگ|ਐਕਟੀਵਿਟੀ ਲੌਗ)\b/gi, 'activity'],
   [/\b(payments?|ادائیگی|ادائیگیاں)\b/gi, 'payment'],
   [/\b(expenses?|kharcha|kharche|خرچہ|خرچے|اخراجات|ਖਰਚਾ)\b/gi, 'expense'],
   [/\b(reports?|رپورٹ)\b/gi, 'report'],
@@ -200,12 +201,13 @@ const PAGE_MAP = {
   reports: '/reports',
   setting: '/settings',
   settings: '/settings',
+  activity: '/activity-log',
 };
 
 const PAGE_LABELS = {
-  en: { dashboard: 'dashboard', customer: 'customers', payment: 'payments', expense: 'expenses', report: 'reports', setting: 'settings' },
-  ur: { dashboard: 'ڈیش بورڈ', customer: 'کسٹمرز', payment: 'ادائیگیاں', expense: 'اخراجات', report: 'رپورٹس', setting: 'ترتیبات' },
-  pa: { dashboard: 'ਡੈਸ਼ਬੋਰਡ', customer: 'ਗਾਹਕ', payment: 'ਭੁਗਤਾਨ', expense: 'ਖਰਚੇ', report: 'ਰਿਪੋਰਟਾਂ', setting: 'ਸੈਟਿੰਗਾਂ' },
+  en: { dashboard: 'dashboard', customer: 'customers', payment: 'payments', expense: 'expenses', report: 'reports', setting: 'settings', activity: 'activity log' },
+  ur: { dashboard: 'ڈیش بورڈ', customer: 'کسٹمرز', payment: 'ادائیگیاں', expense: 'اخراجات', report: 'رپورٹس', setting: 'ترتیبات', activity: 'ایکٹیویٹی لاگ' },
+  pa: { dashboard: 'ਡੈਸ਼ਬੋਰਡ', customer: 'ਗਾਹਕ', payment: 'ਭੁਗਤਾਨ', expense: 'ਖਰਚੇ', report: 'ਰਿਪੋਰਟਾਂ', setting: 'ਸੈਟਿੰਗਾਂ', activity: 'ਐਕਟੀਵਿਟੀ ਲੌਗ' },
 };
 
 const STATUS_LABELS = {
@@ -251,6 +253,8 @@ function guessExpenseCategory(title) {
 const MESSAGES = {
   en: {
     notUnderstood: (tr) => `Sorry, I didn't understand: "${tr}". Say "help" to hear what I can do.`,
+    ambiguousName: (list) => `I found more than one match: ${list}. Say the number, or repeat the full name.`,
+    selectionNotUnderstood: (list) => `I didn't catch which one. Say the number: ${list}.`,
     help:
       'Try things like: "open customers", "show John" (opens his profile), "set John\'s fee to fifteen hundred", ' +
       '"mark John as paid", "John paid 1500", "set John\'s status to cut off", "how much does John owe", ' +
@@ -316,6 +320,8 @@ const MESSAGES = {
   },
   ur: {
     notUnderstood: (tr) => `معاف کیجیے، میں سمجھ نہیں سکا: "${tr}"۔ مدد کے لیے "مدد" کہیں۔`,
+    ambiguousName: (list) => `مجھے ایک سے زیادہ ملتے جلتے نام ملے: ${list}۔ نمبر بولیں یا پورا نام دوبارہ کہیں۔`,
+    selectionNotUnderstood: (list) => `مجھے سمجھ نہیں آیا کونسا۔ نمبر بولیں: ${list}۔`,
     help:
       'کوشش کریں: "کسٹمرز کھولو"، "احمد دکھاؤ" (اس کی پروفائل کھلے گی)، "احمد کی فیس پندرہ سو کرو"، ' +
       '"احمد کو ادا شدہ کریں"، "احمد نے پندرہ سو ادا کیے"، "احمد کا سٹیٹس کٹ آف کرو"، "احمد پر کتنے بقایا ہیں"، ' +
@@ -376,6 +382,8 @@ const MESSAGES = {
   },
   pa: {
     notUnderstood: (tr) => `ਮੁਆਫ਼ ਕਰਨਾ, ਮੈਨੂੰ ਸਮਝ ਨਹੀਂ ਆਇਆ: "${tr}"। ਮਦਦ ਲਈ "ਮਦਦ" ਕਹੋ।`,
+    ambiguousName: (list) => `ਮੈਨੂੰ ਇੱਕ ਤੋਂ ਵੱਧ ਮਿਲਦੇ ਨਾਮ ਮਿਲੇ: ${list}। ਨੰਬਰ ਦੱਸੋ ਜਾਂ ਪੂਰਾ ਨਾਮ ਦੁਬਾਰਾ ਦੱਸੋ।`,
+    selectionNotUnderstood: (list) => `ਮੈਨੂੰ ਸਮਝ ਨਹੀਂ ਆਇਆ ਕਿਹੜਾ। ਨੰਬਰ ਦੱਸੋ: ${list}।`,
     help:
       'ਕੋਸ਼ਿਸ਼ ਕਰੋ: "ਗਾਹਕ ਖੋਲ੍ਹੋ", "ਜੌਨ ਦਿਖਾਓ" (ਪ੍ਰੋਫਾਈਲ ਖੁੱਲ੍ਹੇਗੀ), "ਜੌਨ ਦੀ ਫੀਸ ਪੰਦਰਾਂ ਸੌ ਕਰੋ", "ਜੌਨ ਨੂੰ ਅਦਾ ਕੀਤਾ ਕਰੋ", ' +
       '"ਜੌਨ ਦਾ ਸਟੇਟਸ ਕੱਟ ਆਫ ਕਰੋ", "ਜੌਨ ਤੇ ਕਿੰਨਾ ਬਕਾਇਆ ਹੈ", "ਨਵਾਂ ਗਾਹਕ ਜੌਨ ਫੀਸ ਪੰਦਰਾਂ ਸੌ ਨਾਲ ਸ਼ਾਮਲ ਕਰੋ", ' +
@@ -571,38 +579,79 @@ function similarity(a, b) {
 const NAME_MATCH_THRESHOLD = 0.72;
 
 function findCustomer(customers, rawName) {
-  const name = cleanName(rawName || '').toLowerCase();
-  if (!name) return null;
+  const matches = matchCustomers(customers, rawName);
+  return matches[0] || null;
+}
 
-  const exact =
-    customers.find((c) => c.name?.toLowerCase() === name) ||
-    customers.find((c) => c.name?.toLowerCase().startsWith(name)) ||
-    customers.find((c) => c.name?.toLowerCase().includes(name)) ||
-    customers.find((c) => c.customerId?.toLowerCase() === name);
-  if (exact) return exact;
+// Same tiers findCustomer uses (exact -> starts-with -> includes -> id ->
+// fuzzy), but returns every plausible match instead of picking one winner.
+// When more than one comes back, the caller should ask the person which
+// one they meant instead of silently guessing.
+function matchCustomers(customers, rawName) {
+  const name = cleanName(rawName || '').toLowerCase();
+  if (!name) return [];
+
+  const exact = customers.filter((c) => c.name?.toLowerCase() === name);
+  if (exact.length) return exact;
+
+  const startsWith = customers.filter((c) => c.name?.toLowerCase().startsWith(name));
+  if (startsWith.length) return startsWith;
+
+  const includes = customers.filter((c) => c.name?.toLowerCase().includes(name));
+  if (includes.length) return includes;
+
+  const byId = customers.filter((c) => c.customerId?.toLowerCase() === name);
+  if (byId.length) return byId;
 
   const nameWords = name.split(/\s+/).filter(Boolean);
-  let best = null;
-  let bestScore = 0;
+  const scored = [];
   for (const c of customers) {
     if (!c.name) continue;
     const fullName = c.name.toLowerCase();
     const fullWords = fullName.split(/\s+/).filter(Boolean);
-
     let score = similarity(name, fullName);
     for (const nw of nameWords) {
       for (const fw of fullWords) {
         score = Math.max(score, similarity(nw, fw));
       }
     }
-
-    if (score > bestScore) {
-      bestScore = score;
-      best = c;
-    }
+    if (score >= NAME_MATCH_THRESHOLD) scored.push({ c, score });
   }
+  if (!scored.length) return [];
+  scored.sort((a, b) => b.score - a.score);
+  const best = scored[0].score;
+  return scored.filter((s) => s.score >= best - 0.05).slice(0, 5).map((s) => s.c);
+}
 
-  return bestScore >= NAME_MATCH_THRESHOLD ? best : null;
+// Thrown from inside runParsedCommandInner when a name matches more than
+// one customer. Caught once, centrally, in runParsedCommand below - every
+// individual command handler just calls resolveCustomerOrThrow() exactly
+// like it used to call findCustomer(), and doesn't need its own
+// ambiguity-handling code.
+class AmbiguousCustomerSignal {
+  constructor(payload) {
+    this.payload = payload;
+  }
+}
+
+function resolveCustomerOrThrow(customers, rawName, match, ctx, lang) {
+  const matches = matchCustomers(customers, rawName);
+  if (matches.length <= 1) return matches[0] || null;
+
+  const candidateNames = matches.map((c) => c.name);
+  const nameGroupIndex = Array.isArray(match.groups) ? match.groups.findIndex((g) => g === rawName) : -1;
+
+  if (typeof ctx.setPendingSelection === 'function') {
+    ctx.setPendingSelection({
+      candidates: candidateNames,
+      key: match.key,
+      groups: match.groups,
+      order: match.order,
+      nameGroupIndex,
+    });
+  }
+  const list = candidateNames.map((n, i) => `${i + 1}. ${n}`).join(', ');
+  throw new AmbiguousCustomerSignal({ ok: true, needsSelection: true, message: t(lang, 'ambiguousName', list) });
 }
 
 function money(n) {
@@ -623,7 +672,7 @@ const FILLER_PREFIX = "(?:please\\s+)?(?:can you\\s+|could you\\s+|i want to\\s+
 const LOOKUP_PREFIX = FILLER_PREFIX + "(?:show(?:\\s+me)?|what(?:'s| is)|tell me|find out|check)?\\s*";
 
 const PATTERNS = [
-  { key: 'navigate', regex: /^(?:go to|opens?|shows?(?:\s+me)?|navigate to|pulls?\s+up)\s+(dashboard|customer|payment|expense|report|setting)(?:s|es)?\s*$/i },
+  { key: 'navigate', regex: /^(?:go to|opens?|shows?(?:\s+me)?|navigate to|pulls?\s+up)\s+(?:the\s+)?(dashboard|customer|payment|expense|report|setting|activity)(?:\s+logs?)?(?:s|es)?\s*$/i },
 
   { key: 'help', regex: /^(help|what can you do|what can i say|commands)/i },
 
@@ -847,6 +896,45 @@ export async function runVoiceCommand(rawTranscript, ctx) {
     return m;
   };
 
+  if (ctx.pendingSelection) {
+    const sel = ctx.pendingSelection;
+    const setSel = ctx.setPendingSelection || (() => {});
+    const said = transcript.trim().toLowerCase();
+
+    if (isNegative(said)) {
+      setSel(null);
+      return { ok: true, message: t(lang, 'cancelled') };
+    }
+
+    const ORDINAL_WORDS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'];
+    let chosenIndex = -1;
+    const numMatch = said.match(/\d+/);
+    if (numMatch) {
+      chosenIndex = parseInt(numMatch[0], 10) - 1;
+    } else {
+      const ordinalHit = ORDINAL_WORDS.findIndex((w) => said.includes(w));
+      if (ordinalHit !== -1) chosenIndex = ordinalHit;
+    }
+    if (chosenIndex < 0 || chosenIndex >= sel.candidates.length) {
+      // Not a number - maybe they just repeated (a fuller version of) one
+      // of the candidate names instead.
+      chosenIndex = sel.candidates.findIndex(
+        (n) => said.includes(n.toLowerCase()) || n.toLowerCase().includes(said)
+      );
+    }
+
+    if (chosenIndex < 0 || chosenIndex >= sel.candidates.length) {
+      const list = sel.candidates.map((n, i) => `${i + 1}. ${n}`).join(', ');
+      return { ok: true, needsSelection: true, message: t(lang, 'selectionNotUnderstood', list) };
+    }
+
+    setSel(null);
+    const chosenName = sel.candidates[chosenIndex];
+    const updatedGroups = Array.isArray(sel.groups) ? [...sel.groups] : [];
+    if (sel.nameGroupIndex >= 0) updatedGroups[sel.nameGroupIndex] = chosenName;
+    return runParsedCommand({ key: sel.key, groups: updatedGroups, order: sel.order }, ctx, lang, setPending);
+  }
+
   if (ctx.pendingConfirmation) {
     const pending = ctx.pendingConfirmation;
     if (isAffirmative(transcript)) {
@@ -886,7 +974,20 @@ export async function runVoiceCommand(rawTranscript, ctx) {
   return runParsedCommand(match, ctx, lang, setPending);
 }
 
+// Wraps runParsedCommandInner so any AmbiguousCustomerSignal thrown deep
+// inside a handler (via resolveCustomerOrThrow) turns into a normal
+// needsSelection response here, in one place, instead of every handler
+// needing its own try/catch.
 async function runParsedCommand(match, ctx, lang, setPending) {
+  try {
+    return await runParsedCommandInner(match, ctx, lang, setPending);
+  } catch (e) {
+    if (e instanceof AmbiguousCustomerSignal) return e.payload;
+    throw e;
+  }
+}
+
+async function runParsedCommandInner(match, ctx, lang, setPending) {
   const { key, groups, order, statKey } = match;
 
   if (key === 'help') {
@@ -934,7 +1035,7 @@ async function runParsedCommand(match, ctx, lang, setPending) {
   const customers = await ctx.getCustomers();
 
   if (key === 'sendWhatsapp') {
-    const customer = findCustomer(customers, groups[0]);
+    const customer = resolveCustomerOrThrow(customers, groups[0], match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
     if (!customer.phone) return { ok: false, message: t(lang, 'noPhoneOnFile', customer.name) };
     try {
@@ -954,7 +1055,7 @@ async function runParsedCommand(match, ctx, lang, setPending) {
     } else {
       [rawValue, rawName] = groups;
     }
-    const customer = findCustomer(customers, rawName);
+    const customer = resolveCustomerOrThrow(customers, rawName, match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     const amount = wordsToNumber(rawValue);
     if (amount == null) return { ok: false, message: t(lang, 'missedAmount', customer.name) };
@@ -980,7 +1081,7 @@ async function runParsedCommand(match, ctx, lang, setPending) {
   }
 
   if (key === 'deleteCustomer') {
-    const customer = findCustomer(customers, groups[0]);
+    const customer = resolveCustomerOrThrow(customers, groups[0], match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
     const message = t(lang, 'confirmDeleteCustomer', customer.name);
     setPending({ type: 'deleteCustomer', payload: { mongoId: customer._id, name: customer.name }, message });
@@ -989,7 +1090,7 @@ async function runParsedCommand(match, ctx, lang, setPending) {
 
   if (key === 'queryInfo' || key === 'openCustomerDetail') {
     const rawName = groups[0];
-    const customer = findCustomer(customers, rawName);
+    const customer = resolveCustomerOrThrow(customers, rawName, match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     setPendingCustomerTarget({ customerId: customer.customerId, mongoId: customer._id }, 'view');
     ctx.navigate('/customers');
@@ -1007,46 +1108,46 @@ async function runParsedCommand(match, ctx, lang, setPending) {
   }
 
   if (key === 'queryDues') {
-    const customer = findCustomer(customers, groups[0]);
+    const customer = resolveCustomerOrThrow(customers, groups[0], match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
     return { ok: true, message: t(lang, 'owes', customer.name, money(customer.pendingDues || 0)) };
   }
 
   if (key === 'queryFee') {
-    const customer = findCustomer(customers, groups[0]);
+    const customer = resolveCustomerOrThrow(customers, groups[0], match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
     return { ok: true, message: t(lang, 'feeLine', customer.name, money(customer.monthlyFee)) };
   }
 
   if (key === 'queryPackage') {
-    const customer = findCustomer(customers, groups[0]);
+    const customer = resolveCustomerOrThrow(customers, groups[0], match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
     if (!customer.package) return { ok: true, message: t(lang, 'noPackage', customer.name) };
     return { ok: true, message: t(lang, 'packageLine', customer.name, customer.package) };
   }
 
   if (key === 'queryPhone') {
-    const customer = findCustomer(customers, groups[0]);
+    const customer = resolveCustomerOrThrow(customers, groups[0], match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
     if (!customer.phone) return { ok: true, message: t(lang, 'noPhone', customer.name) };
     return { ok: true, message: t(lang, 'phoneLine', customer.name, customer.phone) };
   }
 
   if (key === 'queryAddress') {
-    const customer = findCustomer(customers, groups[0]);
+    const customer = resolveCustomerOrThrow(customers, groups[0], match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
     if (!customer.address) return { ok: true, message: t(lang, 'noAddress', customer.name) };
     return { ok: true, message: t(lang, 'addressLine', customer.name, customer.address) };
   }
 
   if (key === 'queryStatus') {
-    const customer = findCustomer(customers, groups[0]);
+    const customer = resolveCustomerOrThrow(customers, groups[0], match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
     return { ok: true, message: t(lang, 'statusLine', customer.name, STATUS_LABELS[lang]?.[customer.status] || customer.status) };
   }
 
   if (key === 'queryPaymentStatus') {
-    const customer = findCustomer(customers, groups[0]);
+    const customer = resolveCustomerOrThrow(customers, groups[0], match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
     return { ok: true, message: t(lang, 'paymentStatusLine', customer.name, STATUS_LABELS[lang]?.[customer.paymentStatus] || customer.paymentStatus) };
   }
@@ -1091,7 +1192,7 @@ async function runParsedCommand(match, ctx, lang, setPending) {
 
   if (key === 'setBill') {
     const [rawName, rawValue] = groups;
-    const customer = findCustomer(customers, rawName);
+    const customer = resolveCustomerOrThrow(customers, rawName, match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     const amount = wordsToNumber(rawValue);
     if (amount == null) return { ok: false, message: t(lang, 'missedAmount', customer.name) };
@@ -1103,7 +1204,7 @@ async function runParsedCommand(match, ctx, lang, setPending) {
 
   if (key === 'setDues') {
     const [rawName, rawValue] = groups;
-    const customer = findCustomer(customers, rawName);
+    const customer = resolveCustomerOrThrow(customers, rawName, match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     const amount = wordsToNumber(rawValue);
     if (amount == null) return { ok: false, message: t(lang, 'missedAmount', customer.name) };
@@ -1115,7 +1216,7 @@ async function runParsedCommand(match, ctx, lang, setPending) {
   if (key === 'addDues') {
     let [rawValue, rawName] = groups;
     if (order && order[0] === 'name') [rawName, rawValue] = groups;
-    const customer = findCustomer(customers, rawName);
+    const customer = resolveCustomerOrThrow(customers, rawName, match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     const amount = wordsToNumber(rawValue);
     if (amount == null) return { ok: false, message: t(lang, 'missedAmount', rawName) };
@@ -1127,7 +1228,7 @@ async function runParsedCommand(match, ctx, lang, setPending) {
 
   if (key === 'setPackage') {
     const [rawName, rawPkg] = groups;
-    const customer = findCustomer(customers, rawName);
+    const customer = resolveCustomerOrThrow(customers, rawName, match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     const pkg = rawPkg.trim();
     await ctx.API.put(`/customers/${customer._id}`, { package: pkg });
@@ -1137,7 +1238,7 @@ async function runParsedCommand(match, ctx, lang, setPending) {
 
   if (key === 'setPhone') {
     const [rawName, rawPhone] = groups;
-    const customer = findCustomer(customers, rawName);
+    const customer = resolveCustomerOrThrow(customers, rawName, match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     const phone = rawPhone.replace(/[^\d]/g, '');
     await ctx.API.put(`/customers/${customer._id}`, { phone });
@@ -1147,7 +1248,7 @@ async function runParsedCommand(match, ctx, lang, setPending) {
 
   if (key === 'setAddress') {
     const [rawName, rawAddress] = groups;
-    const customer = findCustomer(customers, rawName);
+    const customer = resolveCustomerOrThrow(customers, rawName, match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     await ctx.API.put(`/customers/${customer._id}`, { address: rawAddress.trim() });
     ctx.refreshCustomers();
@@ -1156,7 +1257,7 @@ async function runParsedCommand(match, ctx, lang, setPending) {
 
   if (key === 'setDay') {
     const [rawName, rawDay] = groups;
-    const customer = findCustomer(customers, rawName);
+    const customer = resolveCustomerOrThrow(customers, rawName, match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     const day = wordsToNumber(rawDay);
     if (day == null || day < 1 || day > 31) return { ok: false, message: t(lang, 'missedDay', customer.name) };
@@ -1167,7 +1268,7 @@ async function runParsedCommand(match, ctx, lang, setPending) {
 
   if (key === 'setStatus') {
     const [rawName, rawStatus] = groups;
-    const customer = findCustomer(customers, rawName);
+    const customer = resolveCustomerOrThrow(customers, rawName, match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
     const normalized = rawStatus.toLowerCase().replace(/\s+/g, '');
     const status = STATUS_MAP[normalized];
@@ -1178,7 +1279,7 @@ async function runParsedCommand(match, ctx, lang, setPending) {
   }
 
   if (key === 'markPaid') {
-    const customer = findCustomer(customers, groups[0]);
+    const customer = resolveCustomerOrThrow(customers, groups[0], match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
     const message = t(lang, 'confirmMarkPaid', customer.name);
     setPending({
@@ -1190,7 +1291,7 @@ async function runParsedCommand(match, ctx, lang, setPending) {
   }
 
   if (key === 'markUnpaid') {
-    const customer = findCustomer(customers, groups[0]);
+    const customer = resolveCustomerOrThrow(customers, groups[0], match, ctx, lang);
     if (!customer) return { ok: false, message: t(lang, 'customerNotFound', groups[0]) };
     const message = t(lang, 'confirmMarkUnpaid', customer.name);
     setPending({ type: 'markUnpaid', payload: { mongoId: customer._id, name: customer.name }, message });

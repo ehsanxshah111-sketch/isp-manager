@@ -172,6 +172,38 @@ html.dark-mode .voice-fab-caption {
   box-shadow: 0 3px 10px rgba(184, 50, 26, 0.4);
 }
 
+.voice-bubble-select {
+  max-width: 300px;
+  border-color: rgba(42, 125, 225, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.voice-select-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.voice-select-btn {
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+
+.voice-select-btn:hover {
+  background: rgba(212, 175, 55, 0.22);
+  transform: translateY(-1px);
+}
+
 @keyframes voice-bubble-in {
   from {
     opacity: 0;
@@ -187,6 +219,7 @@ html.dark-mode .voice-fab-caption {
   .voice-controller {
     right: 16px;
     bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    align-items: stretch;
   }
   .voice-fab {
     width: 56px;
@@ -198,5 +231,40 @@ html.dark-mode .voice-fab-caption {
     content: '';
     position: absolute;
     inset: -12px;
+  }
+
+  /* Bubbles/cards are fixed-width on desktop, which overflows narrow
+     phones. Cap them to the viewport instead, and give tappable rows more
+     breathing room since fingers are far less precise than a cursor. */
+  .voice-bubble,
+  .voice-bubble-confirm,
+  .voice-bubble-select {
+    max-width: min(300px, calc(100vw - 48px));
+  }
+
+  .voice-confirm-actions {
+    justify-content: stretch;
+  }
+
+  .voice-confirm-btn {
+    flex: 1;
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+
+  .voice-select-btn {
+    padding: 11px 14px;
+    font-size: 14px;
+  }
+
+  .voice-lang-pill {
+    padding: 6px 14px;
+    font-size: 12px;
+  }
+
+  .voice-fab-caption {
+    max-width: min(220px, calc(100vw - 48px));
+    white-space: normal;
+    text-align: right;
   }
 }

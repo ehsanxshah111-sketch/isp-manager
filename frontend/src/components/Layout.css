@@ -45,9 +45,16 @@
 }
 
 .brand-text {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: linear-gradient(90deg, #d4af37, #f0d878 45%, #d4af37);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .sidebar.closed .brand-text {
@@ -251,7 +258,7 @@ html.dark-mode .mobile-toggle {
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.2px;
-  color: var(--lux-gold, #d4af37);
+  color: #a8790f;
   animation: header-banner-slide-once 12s linear infinite;
 }
 

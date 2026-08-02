@@ -17,6 +17,7 @@ const Layout = () => {
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
+  const [editBrandName, setEditBrandName] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploadingPicture, setUploadingPicture] = useState(false);
   const { user, logout } = useAuth();
@@ -34,6 +35,7 @@ const Layout = () => {
     if (user) {
       setEditName(user.fullName || user.username || '');
       setEditEmail(user.email || '');
+      setEditBrandName(user.brandName || 'ZEEP BROAD BRAND');
       setProfilePicture(user.profilePicture || '');
     }
   }, [user]);
@@ -138,6 +140,10 @@ const Layout = () => {
       toast.error('Name cannot be empty');
       return;
     }
+    if (!editBrandName || editBrandName.trim() === '') {
+      toast.error('Brand name cannot be empty');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -145,6 +151,13 @@ const Layout = () => {
         fullName: editName.trim(),
         email: editEmail.trim()
       });
+
+      // Separate endpoint on purpose - this is the business's brand name,
+      // not the logged-in person's own display name, and only worth an
+      // extra request when it actually changed.
+      if (editBrandName.trim() !== (user?.brandName || 'ZEEP BROAD BRAND')) {
+        await API.put('/auth/brand-name', { brandName: editBrandName.trim() });
+      }
 
       if (res.data.success) {
         toast.success('Profile updated successfully!');
@@ -199,7 +212,7 @@ const Layout = () => {
       <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
         <div className="sidebar-brand">
           <img src={LOGO_DATA_URI} alt="ISP Logo" className="brand-icon-img" />
-          <span className="brand-text">ISP Manager</span>
+          <span className="brand-text">{user?.brandName || 'ZEEP BROAD BRAND'}</span>
         </div>
         <nav className="sidebar-nav">
           {menuItems.map((item) => (
@@ -357,6 +370,18 @@ const Layout = () => {
                   required
                 />
                 <small>This name will appear in the top bar</small>
+              </div>
+              <div className="form-group">
+                <label>Brand Name</label>
+                <input
+                  type="text"
+                  value={editBrandName}
+                  onChange={(e) => setEditBrandName(e.target.value)}
+                  placeholder="e.g. ZEEP BROAD BRAND"
+                  maxLength={40}
+                  required
+                />
+                <small>Shown top-left of the sidebar, next to the logo</small>
               </div>
               <div className="form-group">
                 <label>Email Address</label>

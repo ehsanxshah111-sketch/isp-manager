@@ -18,6 +18,10 @@ const VoiceController = () => {
   // bulk WhatsApp blast) is waiting for the person to say "yes"/"no"
   // or tap the Confirm/Cancel buttons shown below the mic.
   const [pendingConfirmation, setPendingConfirmation] = useState(null);
+  // Holds { candidates, key, groups, order, nameGroupIndex } when a spoken
+  // name matched more than one customer - shown as a pick-one card until
+  // the person says a number/name or taps one of the candidate buttons.
+  const [pendingSelection, setPendingSelection] = useState(null);
   const langOrder = ['en', 'ur', 'pa'];
 
   const recognizerRef = useRef(null);
@@ -28,6 +32,7 @@ const VoiceController = () => {
   const maxDurationTimeoutRef = useRef(null); // safety net in case a press never releases
   const customersCacheRef = useRef(null); // in-memory only, never persisted
   const pendingConfirmationRef = useRef(null); // mirrors state, read synchronously by runVoiceCommand
+  const pendingSelectionRef = useRef(null); // mirrors state, read synchronously by runVoiceCommand
   const navigate = useNavigate();
 
   // Ask for microphone permission once, quietly, as soon as this loads -
@@ -75,6 +80,11 @@ const VoiceController = () => {
     setPendingConfirmation(value);
   }, []);
 
+  const setPendingSelectionBoth = useCallback((value) => {
+    pendingSelectionRef.current = value;
+    setPendingSelection(value);
+  }, []);
+
   const executeTranscript = useCallback(
     async (text) => {
       const result = await runVoiceCommand(text, {
@@ -85,9 +95,15 @@ const VoiceController = () => {
         lang,
         pendingConfirmation: pendingConfirmationRef.current,
         setPendingConfirmation: setPendingConfirmationBoth,
+        pendingSelection: pendingSelectionRef.current,
+        setPendingSelection: setPendingSelectionBoth,
       });
       setLastReply(result.message);
-      if (result.needsConfirmation) {
+      if (result.needsSelection) {
+        // A name matched more than one customer - shown in its own card
+        // with tappable options below, same idea as the confirmation card.
+        toast(result.message, { icon: '🔎', duration: 6000 });
+      } else if (result.needsConfirmation) {
         // Don't toast this as success/error - it's a question, shown in its
         // own bubble with Confirm/Cancel buttons below.
         toast(result.message, { icon: '❓', duration: 6000 });
@@ -99,7 +115,7 @@ const VoiceController = () => {
       speak(result.message);
       return result;
     },
-    [navigate, getCustomers, refreshCustomers, lang, setPendingConfirmationBoth]
+    [navigate, getCustomers, refreshCustomers, lang, setPendingConfirmationBoth, setPendingSelectionBoth]
   );
 
   const handleFinalTranscript = useCallback(
@@ -136,6 +152,25 @@ const VoiceController = () => {
       setStatus('processing');
       try {
         await executeTranscript(answer);
+      } catch (err) {
+        const msg = err.response?.data?.message || 'Something went wrong running that command.';
+        setLastReply(msg);
+        toast.error(msg);
+        speak(msg);
+      } finally {
+        setStatus('idle');
+      }
+    },
+    [executeTranscript]
+  );
+
+  // Tapping a candidate name just feeds its number straight through the
+  // same logic saying the number out loud would - one code path either way.
+  const handleSelectTap = useCallback(
+    async (index) => {
+      setStatus('processing');
+      try {
+        await executeTranscript(String(index + 1));
       } catch (err) {
         const msg = err.response?.data?.message || 'Something went wrong running that command.';
         setLastReply(msg);
@@ -342,8 +377,29 @@ const VoiceController = () => {
           {status === 'processing' && <span className="voice-bubble-transcript">"{transcript}"</span>}
         </div>
       )}
-      {status === 'idle' && lastReply && !pendingConfirmation && (
+      {status === 'idle' && lastReply && !pendingConfirmation && !pendingSelection && (
         <div className="voice-bubble voice-bubble-reply">{lastReply}</div>
+      )}
+
+      {/* Pick-one card - shown when a spoken name matched more than one
+          customer. The person can tap a name here, or just say the
+          number/name out loud; both go through the exact same handler. */}
+      {status === 'idle' && pendingSelection && (
+        <div className="voice-bubble voice-bubble-select">
+          <span className="voice-bubble-transcript">{lastReply}</span>
+          <div className="voice-select-actions">
+            {pendingSelection.candidates.map((name, i) => (
+              <button
+                key={`${name}-${i}`}
+                type="button"
+                className="voice-select-btn"
+                onClick={() => handleSelectTap(i)}
+              >
+                {i + 1}. {name}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Confirmation card - shown until the person answers, either by
@@ -387,7 +443,7 @@ const VoiceController = () => {
         </span>
       </button>
       <div className="voice-fab-caption">
-        {pendingConfirmation ? 'Waiting for yes/no…' : statusLabel}
+        {pendingSelection ? 'Waiting for your choice…' : pendingConfirmation ? 'Waiting for yes/no…' : statusLabel}
       </div>
     </div>
   );
