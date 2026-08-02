@@ -2252,6 +2252,52 @@ html.dark-mode .bulk-wa-hint {
   color: #8b949e;
 }
 
+.bulk-wa-dayfilter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #f8faff;
+  border: 1px solid #e2eaf2;
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+
+.bulk-wa-dayfilter label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a2a3a;
+  white-space: nowrap;
+}
+
+.bulk-wa-dayfilter select {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid #dbe4ee;
+  background: #fff;
+  color: #1a2a3a;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+html.dark-mode .bulk-wa-dayfilter {
+  background: #0d1117;
+  border-color: #30363d;
+}
+
+html.dark-mode .bulk-wa-dayfilter label {
+  color: #e6edf3;
+}
+
+html.dark-mode .bulk-wa-dayfilter select {
+  background: #161b22;
+  border-color: #30363d;
+  color: #e6edf3;
+}
+
 .bulk-wa-selectall {
   display: flex;
   align-items: center;
@@ -2376,5 +2422,11 @@ html.dark-mode .bulk-wa-row-detail {
   }
   .bulk-wa-row-detail {
     white-space: normal;
+  }
+  .bulk-wa-dayfilter {
+    flex-wrap: wrap;
+  }
+  .bulk-wa-dayfilter select {
+    width: 100%;
   }
 }

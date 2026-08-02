@@ -7,7 +7,15 @@ const ActivityLog = require('../models/ActivityLog');
 // line on a customer who is already fully caught up.
 const buildReminderMessage = (c) => {
   const duesLine = c.pendingDues > 0 ? ` You also have pending dues of PKR ${c.pendingDues}.` : '';
-  return `Dear ${c.name}, this is a reminder that your internet bill of PKR ${c.monthlyFee} is due.${duesLine} Please clear it at your earliest convenience. Thank you.`;
+  return (
+    `Dear ${c.name}, this is a reminder that your internet bill of PKR ${c.monthlyFee} is due.${duesLine} Please clear it at your earliest convenience.\n\n` +
+    `*💳 Online Payment Options*\n\n` +
+    `📱 *JazzCash*\n03000878181\n_Syed Muhammad Bin Haider_\n\n` +
+    `🔗 *Raast ID*\n03000878181\n_M. Bin Haider_\n\n` +
+    `🏦 *HBL Bank*\n12727900655203\n_M. Bin Haider_\n\n` +
+    `⚠️ *Please send a screenshot of the payment after transferring - payment will not be accepted without it.*\n\n` +
+    `Thank you.`
+  );
 };
 
 // @desc    Send WhatsApp reminder to single customer
@@ -73,13 +81,18 @@ exports.sendBulkWhatsApp = async (req, res) => {
     // If specific customers were selected in the "Bulk WhatsApp" modal,
     // customerIds narrows it down (still only ever Unpaid customers, as a
     // safety net).
-    const { customerIds } = req.body || {};
+    const { customerIds, day } = req.body || {};
     const query = { paymentStatus: 'Unpaid', phone: { $ne: '', $exists: true } };
     if (Array.isArray(customerIds) && customerIds.length > 0) {
       query.customerId = { $in: customerIds };
     }
 
-    const customers = await Customer.find(query);
+    let customers = await Customer.find(query);
+
+    if (day !== undefined && day !== null && day !== '') {
+      const targetDay = parseFloat(day);
+      customers = customers.filter((c) => c.connectionDate && parseFloat(c.connectionDate) === targetDay);
+    }
 
     if (customers.length === 0) {
       return res.json({

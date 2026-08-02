@@ -215,7 +215,15 @@ const formatPhoneForWhatsApp = (phone) => {
 // "Pending dues: PKR 0" line on a fully caught-up customer.
 const buildReminderMessage = (c) => {
   const duesLine = c.pendingDues > 0 ? ` You also have pending dues of PKR ${c.pendingDues}.` : '';
-  return `Dear ${c.name}, this is a reminder that your internet bill of PKR ${c.monthlyFee} is due.${duesLine} Please clear it at your earliest convenience. Thank you.`;
+  return (
+    `Dear ${c.name}, this is a reminder that your internet bill of PKR ${c.monthlyFee} is due.${duesLine} Please clear it at your earliest convenience.\n\n` +
+    `*💳 Online Payment Options*\n\n` +
+    `📱 *JazzCash*\n03000878181\n_Syed Muhammad Bin Haider_\n\n` +
+    `🔗 *Raast ID*\n03000878181\n_M. Bin Haider_\n\n` +
+    `🏦 *HBL Bank*\n12727900655203\n_M. Bin Haider_\n\n` +
+    `⚠️ *Please send a screenshot of the payment after transferring - payment will not be accepted without it.*\n\n` +
+    `Thank you.`
+  );
 };
 
 const startOfThisMonth = () => {
@@ -835,14 +843,24 @@ app.post('/api/whatsapp/bulk', auth, async (req, res) => {
     // By default this targets every Unpaid customer with a phone number.
     // If the person picked specific customers in the "Bulk WhatsApp" modal,
     // customerIds narrows it down to just that selection (still only ever
-    // customers who are actually Unpaid, as a safety net).
-    const { customerIds } = req.body || {};
+    // customers who are actually Unpaid, as a safety net). If they picked a
+    // billing day instead (e.g. "day 2"), day narrows it down to just the
+    // customers whose connectionDate (billing day of month) matches - so a
+    // reminder run can target just today's (or any chosen day's) renewals.
+    const { customerIds, day } = req.body || {};
     const query = { paymentStatus: 'Unpaid', phone: { $ne: '' } };
     if (Array.isArray(customerIds) && customerIds.length > 0) {
       query.customerId = { $in: customerIds };
     }
 
-    const unpaidCustomers = await Customer.find(query);
+    let unpaidCustomers = await Customer.find(query);
+
+    if (day !== undefined && day !== null && day !== '') {
+      const targetDay = parseFloat(day);
+      unpaidCustomers = unpaidCustomers.filter(
+        (c) => c.connectionDate && parseFloat(c.connectionDate) === targetDay
+      );
+    }
 
     const links = unpaidCustomers
       .filter(c => c.phone)
@@ -855,6 +873,7 @@ app.post('/api/whatsapp/bulk', auth, async (req, res) => {
           phone: c.phone,
           monthlyFee: c.monthlyFee,
           pendingDues: c.pendingDues || 0,
+          connectionDate: c.connectionDate || '',
           whatsappUrl: `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
         };
       });
