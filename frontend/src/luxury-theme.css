@@ -137,3 +137,103 @@ html.dark-mode .top-bar {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* ============================================================
+   WHOLE-SITE LUXURY BACKGROUND
+   Same cream + gold (light) / navy + gold (dark) identity as the
+   login page, now behind every page instead of just the sidebar
+   and top bar. Cards get a warm, slightly glassy tint so they
+   still read as distinct panels floating above it.
+   ============================================================ */
+
+.main-content {
+  background:
+    radial-gradient(circle at 15% 10%, rgba(212, 175, 55, 0.10), transparent 40%),
+    radial-gradient(circle at 90% 85%, rgba(212, 175, 55, 0.08), transparent 45%),
+    linear-gradient(160deg, #f7f3ea 0%, #eef1f6 55%, #f3ead9 100%) !important;
+}
+
+html.dark-mode .main-content {
+  background:
+    radial-gradient(circle at 15% 10%, rgba(212, 175, 55, 0.08), transparent 40%),
+    radial-gradient(circle at 90% 85%, rgba(212, 175, 55, 0.06), transparent 45%),
+    linear-gradient(160deg, #0a0e14 0%, #0d1117 55%, #0d0f14 100%) !important;
+}
+
+/* ---------- Cards & panels: warm glass tint + gold hairline ---------- */
+.card,
+.stat-card,
+.table-container,
+.filter-bar,
+.chart-section,
+.settings-card {
+  background: rgba(255, 255, 255, 0.82) !important;
+  border-color: rgba(212, 175, 55, 0.22) !important;
+  backdrop-filter: blur(6px);
+}
+
+html.dark-mode .card,
+html.dark-mode .stat-card,
+html.dark-mode .table-container,
+html.dark-mode .filter-bar,
+html.dark-mode .chart-section,
+html.dark-mode .settings-card {
+  background: rgba(22, 27, 34, 0.82) !important;
+  border-color: rgba(212, 175, 55, 0.18) !important;
+}
+
+.table-container th {
+  background: rgba(212, 175, 55, 0.08) !important;
+}
+
+html.dark-mode .table-container th {
+  background: rgba(212, 175, 55, 0.06) !important;
+}
+
+/* ---------- Headings: solid navy/gold, never gradient text -----------
+   (Gradient/transparent text on numeric or important values has broken
+   readability here before - see the stat-value note above - so page
+   titles and section headings get a plain color + a small gold accent
+   bar instead of any -webkit-text-fill-color trick.) */
+.page-title,
+.dashboard-page .page-title,
+.chart-section h3,
+.recent-section h3 {
+  position: relative;
+  padding-left: 14px;
+  color: var(--lux-navy);
+}
+
+.page-title::before,
+.dashboard-page .page-title::before,
+.chart-section h3::before,
+.recent-section h3::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 4px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--lux-gold-soft), var(--lux-gold-deep));
+}
+
+html.dark-mode .page-title,
+html.dark-mode .dashboard-page .page-title,
+html.dark-mode .chart-section h3,
+html.dark-mode .recent-section h3 {
+  color: #e9d9a8;
+}
+
+/* ---------- Mobile: lighter blur for smoother scrolling on phones ---------- */
+@media (max-width: 480px) {
+  .top-bar,
+  .card,
+  .stat-card,
+  .table-container,
+  .filter-bar,
+  .chart-section,
+  .settings-card {
+    backdrop-filter: blur(3px);
+  }
+}

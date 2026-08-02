@@ -356,20 +356,44 @@ html.dark-mode .header-banner-track span {
     display: none !important;
   }
 
-  /* Top bar mobile */
+  /* Top bar mobile - wraps onto two rows: title+actions on row 1,
+     the sliding banner gets its own full-width row underneath so it
+     stays visible instead of being hidden. */
   .top-bar {
     padding: 10px 12px !important;
-    gap: 8px;
+    gap: 6px 8px;
+    flex-wrap: wrap;
+  }
+
+  .mobile-toggle {
+    order: 1;
   }
 
   .top-bar h1 {
     font-size: 16px !important;
     flex: 1;
     margin-left: 0;
+    order: 2;
+  }
+
+  .top-bar-actions {
+    order: 3;
   }
 
   .header-banner-wrap {
-    display: none !important;
+    order: 4;
+    flex: 1 1 100%;
+    width: 100%;
+    height: 20px;
+    margin: 2px 0 0 0;
+  }
+
+  .header-banner-track span {
+    font-size: 12.5px;
+  }
+
+  .header-banner-icon {
+    font-size: 13px;
   }
 
   /* Top bar actions mobile */

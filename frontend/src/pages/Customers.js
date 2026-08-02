@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
-import { consumePendingCustomerTarget } from '../utils/voiceBus';
+import { consumePendingCustomerTarget, subscribeCustomerTarget } from '../utils/voiceBus';
 
 const Customers = () => {
   const [customers, setCustomers] = useState([]);
@@ -24,8 +24,42 @@ const Customers = () => {
     paymentStatus: 'Unpaid',
   });
 
+  const customersRef = useRef([]);
+
+  const matchPendingTarget = (list, target) =>
+    list.find(
+      (c) =>
+        (target.mongoId && c._id === target.mongoId) ||
+        (target.customerId && c.customerId === target.customerId)
+    );
+
   useEffect(() => {
     loadCustomers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    customersRef.current = customers;
+  }, [customers]);
+
+  // Handles a voice command like "open Ali" said while ALREADY on this page.
+  // Navigating to the same route never remounts it, so the mount effect
+  // above (which reads the pending target once via consumePendingCustomerTarget)
+  // would otherwise never run again - this is what makes "open <name>" open
+  // the profile immediately even when we're already sitting on /customers.
+  useEffect(() => {
+    const unsubscribe = subscribeCustomerTarget(({ target }) => {
+      consumePendingCustomerTarget(); // we're handling it right now, clear it
+      const found = matchPendingTarget(customersRef.current, target);
+      if (found) {
+        openEditModal(found);
+      } else {
+        // Not in the currently loaded list (e.g. just added elsewhere) -
+        // refresh and let loadCustomers' own pending-target check open it.
+        loadCustomers();
+      }
+    });
+    return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

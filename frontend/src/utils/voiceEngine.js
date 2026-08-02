@@ -12,6 +12,26 @@ export function isSpeakingSupported() {
   return 'speechSynthesis' in window;
 }
 
+// True on phones/tablets (touch as the primary input). Used to switch the
+// mic button from "hold to talk" (great with a mouse) to "tap to start,
+// tap again to send" (reliable on touch - holding a finger down is exactly
+// when the browser's one-time mic-permission prompt likes to steal the
+// touch and end up releasing the button before you've said anything).
+export function isTouchDevice() {
+  if (typeof window === 'undefined') return false;
+  const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  return coarse || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+}
+
+// iOS Safari (and every browser on iOS, since they all use WebKit under
+// the hood) has no speech-recognition engine at all - only Chrome/Edge on
+// desktop and Chrome on Android expose it. Used to give a precise reason
+// instead of a generic "not supported" message.
+export function isIOS() {
+  if (typeof navigator === 'undefined') return false;
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
 /**
  * Creates a one-shot recognizer. Call .start() on press, .stop() on release.
  * onResult(transcript, isFinal) fires as speech is recognized.
