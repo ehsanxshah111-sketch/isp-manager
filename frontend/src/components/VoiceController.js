@@ -13,6 +13,11 @@ const VoiceController = () => {
   const [lastReply, setLastReply] = useState('');
   const [supported] = useState(isVoiceSupported());
   const [lang, setLang] = useState('en');
+  // Holds { type, payload, message } while a destructive/important
+  // action (add/delete a customer, mark paid/unpaid, change status,
+  // bulk WhatsApp blast) is waiting for the person to say "yes"/"no"
+  // or tap the Confirm/Cancel buttons shown below the mic.
+  const [pendingConfirmation, setPendingConfirmation] = useState(null);
   const langOrder = ['en', 'ur', 'pa'];
 
   const recognizerRef = useRef(null);
@@ -21,6 +26,7 @@ const VoiceController = () => {
   const isHeldRef = useRef(false); // true from press-down until actual release
   const restartTimeoutRef = useRef(null);
   const customersCacheRef = useRef(null); // in-memory only, never persisted
+  const pendingConfirmationRef = useRef(null); // mirrors state, read synchronously by runVoiceCommand
   const navigate = useNavigate();
 
   const getCustomers = useCallback(async () => {
@@ -35,6 +41,38 @@ const VoiceController = () => {
     customersCacheRef.current = null; // force a fresh read next time it's needed
   }, []);
 
+  const setPendingConfirmationBoth = useCallback((value) => {
+    pendingConfirmationRef.current = value;
+    setPendingConfirmation(value);
+  }, []);
+
+  const executeTranscript = useCallback(
+    async (text) => {
+      const result = await runVoiceCommand(text, {
+        API,
+        navigate,
+        getCustomers,
+        refreshCustomers,
+        lang,
+        pendingConfirmation: pendingConfirmationRef.current,
+        setPendingConfirmation: setPendingConfirmationBoth,
+      });
+      setLastReply(result.message);
+      if (result.needsConfirmation) {
+        // Don't toast this as success/error - it's a question, shown in its
+        // own bubble with Confirm/Cancel buttons below.
+        toast(result.message, { icon: '❓', duration: 6000 });
+      } else if (result.ok) {
+        toast.success(result.message, { duration: 4500 });
+      } else {
+        toast.error(result.message, { duration: 4500 });
+      }
+      speak(result.message);
+      return result;
+    },
+    [navigate, getCustomers, refreshCustomers, lang, setPendingConfirmationBoth]
+  );
+
   const handleFinalTranscript = useCallback(
     async (text) => {
       if (!text || !text.trim()) {
@@ -43,30 +81,36 @@ const VoiceController = () => {
       }
       setStatus('processing');
       try {
-        const result = await runVoiceCommand(text, {
-          API,
-          navigate,
-          getCustomers,
-          refreshCustomers,
-          lang,
-        });
-        setLastReply(result.message);
-        if (result.ok) {
-          toast.success(result.message, { duration: 4500 });
-        } else {
-          toast.error(result.message, { duration: 4500 });
-        }
-        speak(result.message, { lang: VOICE_LANGUAGES[lang].code });
+        await executeTranscript(text);
       } catch (err) {
         const msg = err.response?.data?.message || 'Something went wrong running that command.';
         setLastReply(msg);
         toast.error(msg);
-        speak(msg, { lang: VOICE_LANGUAGES[lang].code });
+        speak(msg);
       } finally {
         setStatus('idle');
       }
     },
-    [navigate, getCustomers, refreshCustomers, lang]
+    [executeTranscript]
+  );
+
+  // Tapping Confirm/Cancel just feeds "yes"/"no" straight through the same
+  // logic a spoken "yes"/"no" would - no separate code path to keep in sync.
+  const handleConfirmTap = useCallback(
+    async (answer) => {
+      setStatus('processing');
+      try {
+        await executeTranscript(answer);
+      } catch (err) {
+        const msg = err.response?.data?.message || 'Something went wrong running that command.';
+        setLastReply(msg);
+        toast.error(msg);
+        speak(msg);
+      } finally {
+        setStatus('idle');
+      }
+    },
+    [executeTranscript]
   );
 
   // Starts (or restarts) one recognition session. Chrome/Edge sometimes end
@@ -195,8 +239,26 @@ const VoiceController = () => {
           {status === 'processing' && <span className="voice-bubble-transcript">"{transcript}"</span>}
         </div>
       )}
-      {status === 'idle' && lastReply && (
+      {status === 'idle' && lastReply && !pendingConfirmation && (
         <div className="voice-bubble voice-bubble-reply">{lastReply}</div>
+      )}
+
+      {/* Confirmation card - shown until the person answers, either by
+          voice ("yes"/"no") or by tapping one of these buttons. Used
+          before adding/deleting a customer, marking paid/unpaid,
+          changing a customer's status, or a bulk WhatsApp blast. */}
+      {status === 'idle' && pendingConfirmation && (
+        <div className="voice-bubble voice-bubble-confirm">
+          <span className="voice-bubble-transcript">{pendingConfirmation.message}</span>
+          <div className="voice-confirm-actions">
+            <button type="button" className="voice-confirm-btn voice-confirm-yes" onClick={() => handleConfirmTap('yes')}>
+              ✅ Yes
+            </button>
+            <button type="button" className="voice-confirm-btn voice-confirm-no" onClick={() => handleConfirmTap('no')}>
+              ✕ Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       <button
@@ -222,7 +284,9 @@ const VoiceController = () => {
           {status === 'processing' ? '⏳' : status === 'error' ? '⚠️' : '🎙️'}
         </span>
       </button>
-      <div className="voice-fab-caption">{statusLabel}</div>
+      <div className="voice-fab-caption">
+        {pendingConfirmation ? 'Waiting for yes/no…' : statusLabel}
+      </div>
     </div>
   );
 };
