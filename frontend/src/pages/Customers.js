@@ -309,7 +309,7 @@ const Customers = () => {
   };
 
   const buildWhatsAppUrl = (c) => {
-    let phone = (c.phone || '').replace(/[\s\-\(\)]/g, '');
+    let phone = (c.phone || '').replace(/[\s\-()]/g, '');
     if (phone.startsWith('0')) phone = '92' + phone.substring(1);
     if (!phone.startsWith('92') && !phone.startsWith('+')) phone = '92' + phone;
     phone = phone.replace(/\D/g, '');
