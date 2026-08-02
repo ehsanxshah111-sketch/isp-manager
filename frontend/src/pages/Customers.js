@@ -289,46 +289,82 @@ const Customers = () => {
     setBulkOpenedIds((prev) => ({ ...prev, [item.customerId]: true }));
   };
 
-  const sendBulkWhatsApp = async () => {
+  // Same wording as the backend's buildReminderMessage, kept in sync
+  // manually - duplicated here (instead of waiting on the API) so every
+  // WhatsApp tab can be opened synchronously, in the same click, with
+  // nothing awaited in between. That's what keeps the browser's "this was
+  // a real click" permission alive for every window.open call below, not
+  // just the first one.
+  const buildReminderMessageClient = (c) => {
+    const duesLine = c.pendingDues > 0 ? ` You also have pending dues of PKR ${c.pendingDues}.` : '';
+    return (
+      `Dear ${c.name}, this is a reminder that your internet bill of PKR ${c.monthlyFee} is due.${duesLine} Please clear it at your earliest convenience.\n\n` +
+      `*💳 Online Payment Options*\n\n` +
+      `📱 *JazzCash*\n03000878181\n_Syed Muhammad Bin Haider_\n\n` +
+      `🔗 *Raast ID*\n03000878181\n_M. Bin Haider_\n\n` +
+      `🏦 *HBL Bank*\n12727900655203\n_M. Bin Haider_\n\n` +
+      `⚠️ *Please send a screenshot of the payment after transferring - payment will not be accepted without it.*\n\n` +
+      `Thank you.`
+    );
+  };
+
+  const buildWhatsAppUrl = (c) => {
+    let phone = (c.phone || '').replace(/[\s\-\(\)]/g, '');
+    if (phone.startsWith('0')) phone = '92' + phone.substring(1);
+    if (!phone.startsWith('92') && !phone.startsWith('+')) phone = '92' + phone;
+    phone = phone.replace(/\D/g, '');
+    return `https://wa.me/${phone}?text=${encodeURIComponent(buildReminderMessageClient(c))}`;
+  };
+
+  const sendBulkWhatsApp = () => {
     const ids = Object.keys(bulkSelected).filter((id) => bulkSelected[id]);
     if (ids.length === 0) {
       toast.error('Select at least one customer first!');
       return;
     }
-    setBulkSending(true);
-    try {
-      const res = await API.post('/whatsapp/bulk', {
-        customerIds: ids,
-        day: bulkDayFilter === 'all' ? undefined : bulkDayFilter,
-      });
-      if (res.data.success) {
-        const links = res.data.data || [];
-        setBulkResults(links);
-        // A ready-to-send WhatsApp draft (message pre-filled) is generated
-        // for every selected customer right away - none of them are left
-        // out. Browsers only ever allow ONE new tab to open automatically
-        // per click (anything past that gets silently blocked as a popup),
-        // so we open just the first chat here and leave a one-tap "Open"
-        // button below for every other customer - that always works,
-        // because each tap is its own click, not an automated loop.
-        const opened = {};
-        if (links.length > 0) {
-          window.open(links[0].whatsappUrl, '_blank');
-          opened[links[0].customerId] = true;
-        }
-        setBulkOpenedIds(opened);
-        if (links.length > 1) {
-          toast.success(`Draft ready for all ${links.length} customers. First chat opened - tap 📤 Open next to each other name below to send theirs.`);
-        } else if (links.length === 1) {
-          toast.success('WhatsApp chat opened. Tap Send inside it.');
-        }
-      }
-    } catch (error) {
-      toast.error('Failed to send bulk reminders');
-      console.error('Error:', error);
-    } finally {
-      setBulkSending(false);
+    const selectedCustomers = unpaidWithPhoneAll.filter((c) => ids.includes(c.customerId));
+
+    // Every window.open below fires right here, synchronously, one after
+    // another - nothing is awaited first. window.open tells us the truth:
+    // it returns the new tab on success, or null/undefined if the browser
+    // blocked it as a popup, so we know exactly who actually got opened.
+    const opened = {};
+    const results = selectedCustomers.map((c) => {
+      const whatsappUrl = buildWhatsAppUrl(c);
+      const win = window.open(whatsappUrl, '_blank');
+      opened[c.customerId] = !!win;
+      return {
+        name: c.name,
+        customerId: c.customerId,
+        phone: c.phone,
+        monthlyFee: c.monthlyFee,
+        pendingDues: c.pendingDues || 0,
+        whatsappUrl,
+      };
+    });
+    setBulkResults(results);
+    setBulkOpenedIds(opened);
+
+    const openedCount = Object.values(opened).filter(Boolean).length;
+    const blockedCount = results.length - openedCount;
+    if (blockedCount === 0) {
+      toast.success(`Opened WhatsApp for all ${results.length} customer${results.length === 1 ? '' : 's'} at once! Tap Send inside each chat.`);
+    } else {
+      toast.error(
+        `Opened ${openedCount} of ${results.length}. Your browser's popup blocker stopped the rest - tap 📤 Open next to those, ` +
+        `or allow pop-ups for this site once (browser menu → Site settings → Pop-ups → Allow) so "Send" opens every chat at once from now on.`
+      );
     }
+
+    // Log this bulk action for the activity history - this doesn't need to
+    // finish before the chats open, so it isn't awaited above.
+    setBulkSending(true);
+    API.post('/whatsapp/bulk', {
+      customerIds: ids,
+      day: bulkDayFilter === 'all' ? undefined : bulkDayFilter,
+    }).catch((error) => {
+      console.error('Bulk WhatsApp log error:', error);
+    }).finally(() => setBulkSending(false));
   };
 
   const filteredCustomers = customers.filter((c) => {
@@ -520,11 +556,11 @@ const Customers = () => {
           <div className="modal bulk-wa-modal" onClick={(e) => e.stopPropagation()}>
             <h3>📱 Bulk WhatsApp Reminders</h3>
             <p className="bulk-wa-hint">
-              Only unpaid customers with a phone number are listed. Clicking "Send to Selected" prepares a
-              ready-to-send message draft for every one of them and opens the first chat. Browsers only allow one
-              chat to open automatically per click, so tap <strong>📤 Open</strong> next to each remaining name
-              below to open their draft too - then tap <strong>Send</strong> inside WhatsApp, which is a WhatsApp
-              rule no app can skip.
+              Only unpaid customers with a phone number are listed. Tapping <strong>"Send to Selected"</strong> opens
+              a pre-filled WhatsApp draft for every one of them at once, in one press. If your browser's popup
+              blocker stops some of them, allow pop-ups for this site once (browser menu → Site settings → Pop-ups →
+              Allow) and every future send will open all of them together. WhatsApp itself still needs a manual tap
+              on <strong>Send</strong> inside each chat - that's a WhatsApp rule no app can skip.
             </p>
 
             <div className="bulk-wa-dayfilter">
