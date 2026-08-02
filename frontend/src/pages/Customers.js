@@ -438,10 +438,14 @@ const Customers = () => {
           return;
         }
         const header = rows[0].map((h) => h.trim().toLowerCase());
-        const idCol = header.findIndex((h) => h.includes('customerid'));
+        // NAS/ISP billing exports (like the PDF this was built for) call this
+        // column "Username" instead of "customerId" - it's the same value in
+        // our system either way, so accept both instead of only matching the
+        // literal word "customerid".
+        const idCol = header.findIndex((h) => h.includes('customerid') || h.includes('username'));
         const phoneCol = header.findIndex((h) => h.includes('phone'));
         if (idCol === -1 || phoneCol === -1) {
-          setImportParseError('Could not find a "customerId" column and a "Phone" column in this file\'s header.');
+          setImportParseError('Could not find a "customerId" (or "Username") column and a "Phone" column in this file\'s header.');
           setImportRecords([]);
           return;
         }
@@ -786,7 +790,7 @@ const Customers = () => {
           <div className="modal bulk-wa-modal" onClick={(e) => e.stopPropagation()}>
             <h3>📞 Import Phone Numbers</h3>
             <p className="bulk-wa-hint">
-              Upload a CSV with a <strong>customerId</strong> column and a <strong>Phone</strong> column.
+              Upload a CSV with a <strong>customerId</strong> (or <strong>Username</strong>) column and a <strong>Phone</strong> column.
               Only rows whose customerId already exists on this website get updated - anything else is
               left alone and listed below so you can see what didn't match.
             </p>
