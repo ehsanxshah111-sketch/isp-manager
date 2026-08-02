@@ -164,6 +164,7 @@ const Layout = () => {
     { path: '/payments', icon: '💳', label: 'Payments' },
     { path: '/expenses', icon: '💰', label: 'Expenses' },
     { path: '/reports', icon: '📈', label: 'Reports' },
+    { path: '/activity-log', icon: '🕘', label: 'Activity Log' },
     { path: '/settings', icon: '⚙️', label: 'Settings' },
   ];
 

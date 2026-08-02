@@ -680,6 +680,36 @@ html.dark-mode .status-badge.free {
   color: #b0b0b0;
 }
 
+.status-badge.customer-added {
+  background: #d4edda;
+  color: #155724;
+}
+
+html.dark-mode .status-badge.customer-added {
+  background: #1a3a2a;
+  color: #7ee8a0;
+}
+
+.status-badge.customer-updated {
+  background: #cce5ff;
+  color: #004085;
+}
+
+html.dark-mode .status-badge.customer-updated {
+  background: #1a2a4a;
+  color: #80b8ff;
+}
+
+.status-badge.customer-deleted {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+html.dark-mode .status-badge.customer-deleted {
+  background: #3a1a1a;
+  color: #f8a0a0;
+}
+
 /* ========================================
    ACTION BUTTONS
    ======================================== */

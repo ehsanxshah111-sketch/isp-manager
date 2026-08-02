@@ -8,6 +8,7 @@ import Customers from './pages/Customers';
 import Payments from './pages/Payments';
 import Expenses from './pages/Expenses';
 import Reports from './pages/Reports';
+import ActivityLog from './pages/ActivityLog';
 import Settings from './pages/Settings';
 import Layout from './components/Layout';
 import './App.css';
@@ -47,6 +48,7 @@ function App() {
             <Route path="payments" element={<Payments />} />
             <Route path="expenses" element={<Expenses />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="activity-log" element={<ActivityLog />} />
             <Route path="settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />

@@ -477,6 +477,26 @@ app.get('/api/customers/:id/history', auth, async (req, res) => {
   }
 });
 
+// @desc  Company-wide activity/audit log - every recorded change across every
+//        customer, newest first. This is the general "Activity Log" section
+//        (as opposed to /api/customers/:id/history, which is scoped to one
+//        customer). Supports optional ?module= and ?action= filters and a
+//        ?limit= (defaults to 300, capped at 1000 so one request can't pull
+//        the entire collection).
+app.get('/api/activity-logs', auth, async (req, res) => {
+  try {
+    const { module: moduleFilter, action, limit } = req.query;
+    const query = {};
+    if (moduleFilter) query.module = moduleFilter;
+    if (action) query.action = action;
+    const capped = Math.min(parseInt(limit) || 300, 1000);
+    const logs = await ActivityLog.find(query).sort({ createdAt: -1 }).limit(capped);
+    res.json({ success: true, data: logs });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // =====================================================
 // PAYMENT ROUTES
 // =====================================================
@@ -649,14 +669,23 @@ app.get('/api/dashboard', auth, async (req, res) => {
 
     const totalRevenue = customers.reduce((sum, c) => sum + (c.monthlyFee || 0), 0);
     const totalDues = customers.reduce((sum, c) => sum + (c.pendingDues || 0), 0);
+
+    // What's actually still owed by a customer = their tracked arrears
+    // (pendingDues) PLUS this month's fee if it hasn't been paid yet. Using
+    // pendingDues alone missed most customers, since day-to-day unpaid fees
+    // live in monthlyFee + paymentStatus, not pendingDues.
+    const amountOwed = (c) => (c.pendingDues || 0) + (c.paymentStatus === 'Unpaid' ? (c.monthlyFee || 0) : 0);
+
     // Total Recovery = money still realistically collectible - only from
     // customers who are still Active. The instant a customer is Cut Off or
-    // Disabled, their pending dues drop out of this figure (cutOffDues below
-    // is exactly that removed amount, kept visible for the record).
+    // Disabled, their owed amount drops out of this figure and shows up in
+    // cutOffDues instead (kept visible for the record, not hidden).
     const totalRecovery = customers
       .filter(c => c.status === 'Active')
-      .reduce((sum, c) => sum + (c.pendingDues || 0), 0);
-    const cutOffDues = totalDues - totalRecovery;
+      .reduce((sum, c) => sum + amountOwed(c), 0);
+    const cutOffDues = customers
+      .filter(c => c.status !== 'Active')
+      .reduce((sum, c) => sum + amountOwed(c), 0);
     const collected = customers
       .filter(c => c.paymentStatus === 'Paid' || c.paymentStatus === '1 YEAR ADVANCED')
       .reduce((sum, c) => sum + (c.monthlyFee || 0), 0);
