@@ -102,12 +102,12 @@ html.dark-mode .top-bar {
   border-color: rgba(212, 175, 55, 0.35) !important;
 }
 
-.stat-value {
-  background: linear-gradient(90deg, var(--lux-navy), var(--lux-gold-deep));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+/* NOTE: a previous version of this rule turned .stat-value into
+   "gradient text" using -webkit-text-fill-color: transparent, which
+   renders the numbers invisible in a lot of browsers/situations and
+   also stomped on the blue/green/red/orange color coding from
+   App.css. Removed on purpose - the dashboard numbers now keep the
+   solid, clearly visible colors defined in App.css. */
 
 /* ---------- Modals: glass backdrop ---------- */
 .modal-overlay {
