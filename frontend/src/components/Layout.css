@@ -201,34 +201,55 @@ html.dark-mode .mobile-toggle {
   flex: 1;
   min-width: 0;
   height: 22px;
-  overflow: hidden;
-  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0 16px;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+}
+
+/* Spins continuously, 360 degrees, forever - purely decorative, doesn't
+   move sideways so it never touches the sliding text. */
+.header-banner-icon {
+  flex: 0 0 auto;
+  display: inline-block;
+  font-size: 15px;
+  line-height: 1;
+  animation: header-banner-spin 3s linear infinite;
+}
+
+@keyframes header-banner-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .header-banner-track {
-  display: inline-flex;
-  white-space: nowrap;
-  position: absolute;
-  left: 0;
-  top: 0;
-  animation: header-banner-slide 16s linear infinite;
-  will-change: transform;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
+/* Only ONE copy of the text exists (no duplicate) - it enters from the
+   right edge, travels the full width, and exits past the left edge before
+   the loop restarts. Combining a %-of-parent "left" with a %-of-self
+   "transform" is what makes this work for any text length: the text
+   always starts and ends fully out of view, whether it's one word or a
+   long sentence. */
 .header-banner-track span {
-  padding-right: 64px;
+  position: absolute;
+  top: 50%;
+  white-space: nowrap;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.2px;
   color: var(--lux-gold, #d4af37);
+  animation: header-banner-slide-once 12s linear infinite;
 }
 
-@keyframes header-banner-slide {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
+@keyframes header-banner-slide-once {
+  from { left: 100%; transform: translateY(-50%) translateX(0); }
+  to   { left: -100%; transform: translateY(-50%) translateX(-100%); }
 }
 
 html.dark-mode .header-banner-track span {

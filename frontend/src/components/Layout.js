@@ -268,9 +268,9 @@ const Layout = () => {
           <h1>{menuItems.find(item => item.path === location.pathname)?.label || 'Dashboard'}</h1>
 
           <div className="header-banner-wrap">
+            <span className="header-banner-icon" aria-hidden="true">🌐</span>
             <div className="header-banner-track">
               <span>{bannerText}</span>
-              <span aria-hidden="true">{bannerText}</span>
             </div>
           </div>
 
