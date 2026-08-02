@@ -939,6 +939,15 @@ html.dark-mode .login-box {
   margin-bottom: 12px;
 }
 
+.login-icon-img {
+  display: block;
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  margin: 0 auto 12px;
+  border-radius: 16px;
+}
+
 .login-title {
   text-align: center;
   font-size: 26px;

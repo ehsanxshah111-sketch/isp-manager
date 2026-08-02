@@ -123,6 +123,41 @@ function normalizeMultilingual(text) {
   return out;
 }
 
+// A real customer can be named things like "Hadi Mobile" or "Ahmed Package"
+// where a word inside their own name is ALSO a dictionary trigger word
+// ("mobile" -> "phone", "package" -> "package command", etc). Without this
+// step, normalizeMultilingual would silently rewrite "Hadi Mobile" into
+// "Hadi phone" before any pattern ever sees it, so the customer can never
+// be found. This swaps known customer names out for a safe placeholder
+// BEFORE normalization runs, then restoreNames() puts the real name back
+// into whatever the command parser captured.
+function protectKnownNames(text, customerNames) {
+  const map = {};
+  let out = text;
+  const uniqueNames = [...new Set((customerNames || []).filter(Boolean))].sort(
+    (a, b) => b.length - a.length
+  );
+  uniqueNames.forEach((name, i) => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`\\b${escaped}\\b`, 'gi');
+    if (re.test(out)) {
+      const token = `voiceprotectedname${i}token`;
+      map[token] = name;
+      out = out.replace(re, token);
+    }
+  });
+  return { text: out, map };
+}
+
+function restoreNames(text, map) {
+  if (!text || !map || Object.keys(map).length === 0) return text;
+  let out = text;
+  for (const [token, name] of Object.entries(map)) {
+    out = out.replace(new RegExp(token, 'gi'), name);
+  }
+  return out;
+}
+
 const PAGE_MAP = {
   dashboard: '/dashboard',
   customer: '/customers',
@@ -745,6 +780,29 @@ export async function runVoiceCommand(transcript, ctx) {
   const lang = ctx.lang && MESSAGES[ctx.lang] ? ctx.lang : 'en';
   const setPending = ctx.setPendingConfirmation || (() => {});
 
+  // Fetch the real customer list up front (this is cached after the first
+  // call, so it's effectively free) and shield any customer name that
+  // happens to contain a dictionary trigger word - e.g. a customer named
+  // "Hadi Mobile" would otherwise get silently rewritten to "Hadi phone"
+  // by normalizeMultilingual before any command ever sees the real name.
+  let customers = [];
+  try {
+    customers = await ctx.getCustomers();
+  } catch (e) {
+    // If this fails we just skip name-protection for this turn; the
+    // rest of the flow still works normally without it.
+  }
+  const { text: protectedTranscript, map: nameMap } = protectKnownNames(
+    transcript,
+    customers.map((c) => c.name)
+  );
+  const restoreInMatch = (m) => {
+    if (m && Array.isArray(m.groups)) {
+      m.groups = m.groups.map((g) => (typeof g === 'string' ? restoreNames(g, nameMap) : g));
+    }
+    return m;
+  };
+
   if (ctx.pendingConfirmation) {
     const pending = ctx.pendingConfirmation;
     if (isAffirmative(transcript)) {
@@ -755,7 +813,7 @@ export async function runVoiceCommand(transcript, ctx) {
       setPending(null);
       return { ok: true, message: t(lang, 'cancelled') };
     }
-    const freshMatch = matchCommand(transcript);
+    const freshMatch = restoreInMatch(matchCommand(protectedTranscript));
     if (!freshMatch) {
       return { ok: true, needsConfirmation: true, message: pending.message };
     }
@@ -763,8 +821,8 @@ export async function runVoiceCommand(transcript, ctx) {
     return runParsedCommand(freshMatch, ctx, lang, setPending);
   }
 
-  const normalized = normalizeMultilingual(transcript.trim().replace(/[.?!]+$/, ''));
-  let match = matchCommand(transcript) || looseIntentFallback(normalized);
+  const normalized = normalizeMultilingual(protectedTranscript.trim().replace(/[.?!]+$/, ''));
+  let match = restoreInMatch(matchCommand(protectedTranscript) || looseIntentFallback(normalized));
 
   if (!match) {
     // Last resort: no command word matched at all - but the client almost
@@ -772,14 +830,9 @@ export async function runVoiceCommand(transcript, ctx) {
     // own, e.g. "Ahmed Khan" with no "open"/"show" in front of it. If that
     // name resolves to a real customer, open their profile instead of
     // making the person repeat themselves with a keyword.
-    try {
-      const customers = await ctx.getCustomers();
-      const candidate = extractLooseName(normalized) || normalized;
-      if (candidate && findCustomer(customers, candidate)) {
-        match = { key: 'openCustomerDetail', groups: [candidate] };
-      }
-    } catch (e) {
-      // ignore - falls through to notUnderstood below
+    const candidate = restoreNames(extractLooseName(normalized) || normalized, nameMap);
+    if (candidate && findCustomer(customers, candidate)) {
+      match = { key: 'openCustomerDetail', groups: [candidate] };
     }
   }
 

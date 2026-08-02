@@ -24,7 +24,7 @@ const Login = () => {
     <div className="login-page">
       <div className="login-container">
         <div className="login-box">
-          <div className="login-icon">🌐</div>
+          <img src="/favicon-192.png" alt="ISP Logo" className="login-icon-img" />
           <h1 className="login-title">ISP Management</h1>
           <p className="login-subtitle">Sign in to your account</p>
           <form onSubmit={handleSubmit}>
