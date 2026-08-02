@@ -477,6 +477,63 @@ app.put('/api/customers/:id', auth, async (req, res) => {
   }
 });
 
+// @desc  Bulk-import phone numbers matched by customerId (e.g. from a CSV of
+//        numbers recovered from old PDFs/receipts). This only ever UPDATES
+//        customers who already exist in the website by an exact customerId
+//        match - it never creates a new customer, and anything that doesn't
+//        match an existing customerId is reported back instead of silently
+//        skipped, so the client can see exactly what happened.
+app.post('/api/customers/import-phones', auth, async (req, res) => {
+  try {
+    const records = Array.isArray(req.body.records) ? req.body.records : [];
+    if (records.length === 0) {
+      return res.status(400).json({ success: false, message: 'No records provided' });
+    }
+
+    let updated = 0;
+    let unchanged = 0;
+    const notFound = [];
+
+    for (const rec of records) {
+      const customerId = (rec.customerId || '').toString().trim();
+      const phone = (rec.phone || '').toString().trim();
+      if (!customerId || !phone) continue;
+
+      const existing = await Customer.findOne({ customerId });
+      if (!existing) {
+        notFound.push(customerId);
+        continue;
+      }
+
+      if (existing.phone === phone) {
+        unchanged++;
+        continue;
+      }
+
+      const oldPhone = existing.phone || '(none)';
+      existing.phone = phone;
+      await existing.save();
+      updated++;
+
+      await logActivity({
+        req,
+        action: 'Customer Updated',
+        entityType: 'Customer',
+        entityId: existing._id,
+        changes: [{ field: 'phone', from: oldPhone, to: phone }],
+        details: `Updated ${existing.name} (${existing.customerId}): phone: "${oldPhone}" \u2192 "${phone}" (bulk phone import)`
+      });
+    }
+
+    res.json({
+      success: true,
+      data: { updated, unchanged, notFoundCount: notFound.length, notFound }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 app.delete('/api/customers/:id', auth, async (req, res) => {
   try {
     const customer = await Customer.findByIdAndDelete(req.params.id);

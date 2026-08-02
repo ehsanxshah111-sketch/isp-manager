@@ -27,6 +27,13 @@ const Customers = () => {
   const [historyLogs, setHistoryLogs] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFileName, setImportFileName] = useState('');
+  const [importRecords, setImportRecords] = useState([]); // [{ customerId, phone }] parsed from the CSV
+  const [importParseError, setImportParseError] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null); // { updated, unchanged, notFound }
+
   const [formData, setFormData] = useState({
     name: '',
     customerId: '',
@@ -367,6 +374,111 @@ const Customers = () => {
     }).finally(() => setBulkSending(false));
   };
 
+  // ===== IMPORT PHONE NUMBERS FROM CSV =====
+  // Small hand-rolled CSV parser (handles quoted fields with embedded
+  // commas) so we don't need to add a new dependency just for this.
+  const parseCSV = (text) => {
+    const rows = [];
+    let row = [];
+    let field = '';
+    let inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      if (inQuotes) {
+        if (char === '"') {
+          if (text[i + 1] === '"') { field += '"'; i++; }
+          else inQuotes = false;
+        } else {
+          field += char;
+        }
+      } else if (char === '"') {
+        inQuotes = true;
+      } else if (char === ',') {
+        row.push(field);
+        field = '';
+      } else if (char === '\n' || char === '\r') {
+        if (char === '\r' && text[i + 1] === '\n') i++;
+        row.push(field);
+        rows.push(row);
+        row = [];
+        field = '';
+      } else {
+        field += char;
+      }
+    }
+    if (field.length > 0 || row.length > 0) {
+      row.push(field);
+      rows.push(row);
+    }
+    return rows.filter((r) => r.some((c) => c.trim() !== ''));
+  };
+
+  const openImportModal = () => {
+    setImportFileName('');
+    setImportRecords([]);
+    setImportParseError('');
+    setImportResult(null);
+    setShowImportModal(true);
+  };
+
+  const handleImportFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImportFileName(file.name);
+    setImportResult(null);
+    setImportParseError('');
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const rows = parseCSV(String(reader.result || ''));
+        if (rows.length < 2) {
+          setImportParseError('That file has no data rows - is it the right CSV?');
+          setImportRecords([]);
+          return;
+        }
+        const header = rows[0].map((h) => h.trim().toLowerCase());
+        const idCol = header.findIndex((h) => h.includes('customerid'));
+        const phoneCol = header.findIndex((h) => h.includes('phone'));
+        if (idCol === -1 || phoneCol === -1) {
+          setImportParseError('Could not find a "customerId" column and a "Phone" column in this file\'s header.');
+          setImportRecords([]);
+          return;
+        }
+        const records = rows.slice(1)
+          .map((r) => ({ customerId: (r[idCol] || '').trim(), phone: (r[phoneCol] || '').trim() }))
+          .filter((r) => r.customerId && r.phone);
+        setImportRecords(records);
+        if (records.length === 0) {
+          setImportParseError('No rows with both a customerId and a phone number were found.');
+        }
+      } catch (error) {
+        console.error('CSV parse error:', error);
+        setImportParseError('Could not read that file - make sure it\'s a plain CSV.');
+        setImportRecords([]);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImportSubmit = async () => {
+    if (importRecords.length === 0) return;
+    setImporting(true);
+    try {
+      const res = await API.post('/customers/import-phones', { records: importRecords });
+      if (res.data.success) {
+        setImportResult(res.data.data);
+        toast.success(`Updated ${res.data.data.updated} customer${res.data.data.updated === 1 ? '' : 's'}!`);
+        loadCustomers(true);
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to import phone numbers');
+      console.error('Error:', error);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const filteredCustomers = customers.filter((c) => {
     const matchesSearch = c.name.toLowerCase().includes(search.toLowerCase()) ||
                           c.customerId.toLowerCase().includes(search.toLowerCase());
@@ -387,6 +499,9 @@ const Customers = () => {
           <RefreshButton onRefresh={() => loadCustomers(true)} refreshing={refreshing} />
           <button className="btn btn-whatsapp" onClick={openBulkModal}>
             📱 Bulk WhatsApp
+          </button>
+          <button className="btn btn-secondary" onClick={openImportModal}>
+            📞 Import Phone Numbers
           </button>
           <button className="btn btn-primary" onClick={openAddModal}>
             ➕ Add Customer
@@ -661,6 +776,70 @@ const Customers = () => {
             )}
             <div className="modal-actions">
               <button type="button" className="cancel-btn" onClick={() => setShowHistoryModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showImportModal && (
+        <div className="modal-overlay" onClick={() => setShowImportModal(false)}>
+          <div className="modal bulk-wa-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>📞 Import Phone Numbers</h3>
+            <p className="bulk-wa-hint">
+              Upload a CSV with a <strong>customerId</strong> column and a <strong>Phone</strong> column.
+              Only rows whose customerId already exists on this website get updated - anything else is
+              left alone and listed below so you can see what didn't match.
+            </p>
+
+            <div className="form-group">
+              <label>CSV File</label>
+              <input type="file" accept=".csv,text/csv" onChange={handleImportFileChange} />
+              {importFileName && <small>Selected: {importFileName}</small>}
+            </div>
+
+            {importParseError && (
+              <p className="bulk-wa-hint" style={{ color: '#dc3545' }}>{importParseError}</p>
+            )}
+
+            {importRecords.length > 0 && !importResult && (
+              <p className="bulk-wa-hint">
+                Found <strong>{importRecords.length}</strong> row{importRecords.length === 1 ? '' : 's'} with a customerId and phone number.
+                Click Import to match them against your customers.
+              </p>
+            )}
+
+            {importResult && (
+              <div className="bulk-wa-list">
+                <div className="bulk-wa-row">
+                  <span className="bulk-wa-row-detail">
+                    ✅ Updated <strong>{importResult.updated}</strong> customer{importResult.updated === 1 ? '' : 's'}
+                    {importResult.unchanged > 0 && ` · ${importResult.unchanged} already had that number`}
+                    {importResult.notFoundCount > 0 && ` · ${importResult.notFoundCount} not found on this website`}
+                  </span>
+                </div>
+                {importResult.notFound?.length > 0 && (
+                  <div className="bulk-wa-row" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                    <span className="bulk-wa-row-name">Not matched (no customer with this ID exists):</span>
+                    <span className="bulk-wa-row-detail">{importResult.notFound.join(', ')}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="modal-actions">
+              <button type="button" className="cancel-btn" onClick={() => setShowImportModal(false)}>
+                {importResult ? 'Close' : 'Cancel'}
+              </button>
+              {!importResult && (
+                <button
+                  type="button"
+                  className="save-btn"
+                  onClick={handleImportSubmit}
+                  disabled={importing || importRecords.length === 0}
+                >
+                  {importing ? 'Importing…' : `Import (${importRecords.length})`}
+                </button>
+              )}
             </div>
           </div>
         </div>

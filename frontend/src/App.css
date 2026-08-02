@@ -74,6 +74,24 @@ html.dark-mode .card {
   background: #218838;
 }
 
+.btn-secondary {
+  background: #6b7f99;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #566a82;
+  transform: translateY(-2px);
+}
+
+html.dark-mode .btn-secondary {
+  background: #4a5568;
+}
+
+html.dark-mode .btn-secondary:hover {
+  background: #3a4353;
+}
+
 html.dark-mode .btn-primary {
   background: #2a7de1;
 }
