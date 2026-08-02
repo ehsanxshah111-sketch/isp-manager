@@ -8,6 +8,8 @@
   align-items: flex-end;
   gap: 10px;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none; /* stops iOS showing a copy/save menu on a long press */
 }
 
 .voice-lang-pill {
@@ -184,10 +186,17 @@ html.dark-mode .voice-fab-caption {
 @media (max-width: 768px) {
   .voice-controller {
     right: 16px;
-    bottom: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   }
   .voice-fab {
     width: 56px;
     height: 56px;
+  }
+  /* Invisible padding around the button so a slightly-off tap on a small
+     screen still reliably hits the mic instead of missing it. */
+  .voice-fab::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
   }
 }

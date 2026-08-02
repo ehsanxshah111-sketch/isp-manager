@@ -137,6 +137,15 @@ const formatPhoneForWhatsApp = (phone) => {
   return digits;
 };
 
+// Shared WhatsApp reminder text for both the single-send and bulk-send
+// routes, so the wording never drifts between the two. Pending dues are
+// only mentioned when there actually are some, to avoid a confusing
+// "Pending dues: PKR 0" line on a fully caught-up customer.
+const buildReminderMessage = (c) => {
+  const duesLine = c.pendingDues > 0 ? ` You also have pending dues of PKR ${c.pendingDues}.` : '';
+  return `Dear ${c.name}, this is a reminder that your internet bill of PKR ${c.monthlyFee} is due.${duesLine} Please clear it at your earliest convenience. Thank you.`;
+};
+
 const startOfThisMonth = () => {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -618,7 +627,7 @@ app.post('/api/whatsapp/send', auth, async (req, res) => {
     if (!customer.phone) return res.status(400).json({ success: false, message: 'No phone number for this customer' });
 
     const phone = formatPhoneForWhatsApp(customer.phone);
-    const message = `Dear ${customer.name}, this is a reminder that your ISP bill of PKR ${customer.monthlyFee} is due. Pending dues: PKR ${customer.pendingDues || 0}. Please clear it at your earliest convenience. Thank you.`;
+    const message = buildReminderMessage(customer);
     const whatsappUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 
     res.json({ success: true, data: { whatsappUrl } });
@@ -629,16 +638,29 @@ app.post('/api/whatsapp/send', auth, async (req, res) => {
 
 app.post('/api/whatsapp/bulk', auth, async (req, res) => {
   try {
-    const unpaidCustomers = await Customer.find({ paymentStatus: 'Unpaid', phone: { $ne: '' } });
+    // By default this targets every Unpaid customer with a phone number.
+    // If the person picked specific customers in the "Bulk WhatsApp" modal,
+    // customerIds narrows it down to just that selection (still only ever
+    // customers who are actually Unpaid, as a safety net).
+    const { customerIds } = req.body || {};
+    const query = { paymentStatus: 'Unpaid', phone: { $ne: '' } };
+    if (Array.isArray(customerIds) && customerIds.length > 0) {
+      query.customerId = { $in: customerIds };
+    }
+
+    const unpaidCustomers = await Customer.find(query);
 
     const links = unpaidCustomers
       .filter(c => c.phone)
       .map(c => {
         const phone = formatPhoneForWhatsApp(c.phone);
-        const message = `Dear ${c.name}, this is a reminder that your ISP bill of PKR ${c.monthlyFee} is due. Pending dues: PKR ${c.pendingDues || 0}. Please clear it at your earliest convenience. Thank you.`;
+        const message = buildReminderMessage(c);
         return {
           customerId: c.customerId,
           name: c.name,
+          phone: c.phone,
+          monthlyFee: c.monthlyFee,
+          pendingDues: c.pendingDues || 0,
           whatsappUrl: `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
         };
       });

@@ -779,7 +779,7 @@ async function executeConfirmedAction(pending, ctx, lang) {
     if (type === 'bulkWhatsapp') {
       const res = await ctx.API.post('/whatsapp/bulk');
       const links = res.data?.data || [];
-      links.slice(0, 5).forEach((item) => window.open(item.whatsappUrl, '_blank'));
+      links.forEach((item) => window.open(item.whatsappUrl, '_blank'));
       return { ok: true, message: t(lang, 'bulkWhatsappSent', links.length) };
     }
   } catch (err) {

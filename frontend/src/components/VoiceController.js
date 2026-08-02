@@ -2,7 +2,7 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../utils/api';
-import { isVoiceSupported, createRecognizer, speak, stopSpeaking, isTouchDevice, isIOS } from '../utils/voiceEngine';
+import { isVoiceSupported, createRecognizer, speak, stopSpeaking, isIOS } from '../utils/voiceEngine';
 import { runVoiceCommand, VOICE_LANGUAGES } from '../utils/voiceCommands';
 import './VoiceController.css';
 
@@ -12,7 +12,6 @@ const VoiceController = () => {
   const [transcript, setTranscript] = useState('');
   const [lastReply, setLastReply] = useState('');
   const [supported] = useState(isVoiceSupported());
-  const [touchMode] = useState(isTouchDevice());
   const [lang, setLang] = useState('en');
   // Holds { type, payload, message } while a destructive/important
   // action (add/delete a customer, mark paid/unpaid, change status,
@@ -26,10 +25,38 @@ const VoiceController = () => {
   const interimRef = useRef('');
   const isHeldRef = useRef(false); // true from press-down until actual release
   const restartTimeoutRef = useRef(null);
-  const maxDurationTimeoutRef = useRef(null); // safety net for tap-to-toggle mode on touch devices
+  const maxDurationTimeoutRef = useRef(null); // safety net in case a press never releases
   const customersCacheRef = useRef(null); // in-memory only, never persisted
   const pendingConfirmationRef = useRef(null); // mirrors state, read synchronously by runVoiceCommand
   const navigate = useNavigate();
+
+  // Ask for microphone permission once, quietly, as soon as this loads -
+  // instead of waiting for the first press. On phones, the browser's
+  // one-time "allow microphone" popup otherwise appears exactly when a
+  // finger is pressing the button, and the popup steals that touch, so
+  // the finger lifts (release fires) before a single word is spoken and
+  // the command comes through empty. Asking early means that by the time
+  // someone actually presses the mic, the permission is already settled
+  // and press-and-hold works the same smooth way it does on a laptop.
+  useEffect(() => {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then((stream) => stream.getTracks().forEach((t) => t.stop()))
+        .catch(() => {}); // denied is fine - recognition can still prompt normally on first press
+    }
+  }, []);
+
+  // Short buzz so a touch feels confirmed without having to watch the
+  // screen - purely cosmetic, so it's wrapped in a try/catch and silently
+  // does nothing on devices/browsers without the Vibration API.
+  const buzz = (ms) => {
+    try {
+      navigator.vibrate && navigator.vibrate(ms);
+    } catch (e) {
+      // ignore
+    }
+  };
 
   const getCustomers = useCallback(async () => {
     if (customersCacheRef.current) return customersCacheRef.current;
@@ -173,12 +200,27 @@ const VoiceController = () => {
     };
   }, []);
 
-  const stopListening = useCallback(() => {
+  const stopListening = useCallback((options = {}) => {
+    const { silent = false } = options;
     isHeldRef.current = false;
     if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
     if (maxDurationTimeoutRef.current) {
       clearTimeout(maxDurationTimeoutRef.current);
       maxDurationTimeoutRef.current = null;
+    }
+    if (silent) {
+      // The press was interrupted (e.g. a permission prompt or a system
+      // gesture stole it) rather than deliberately released - reset
+      // quietly instead of sending whatever partial words were caught.
+      finalTranscriptRef.current = '';
+      interimRef.current = '';
+      setTranscript('');
+      if (recognizerRef.current) {
+        recognizerRef.current.abort ? recognizerRef.current.abort() : recognizerRef.current.stop();
+        recognizerRef.current = null;
+      }
+      setStatus('idle');
+      return;
     }
     if (recognizerRef.current) {
       recognizerRef.current.stop();
@@ -206,57 +248,51 @@ const VoiceController = () => {
     setLastReply('');
     setStatus('listening');
     isHeldRef.current = true;
+    buzz(15);
     recognizerRef.current = beginSession();
 
-    // Safety net for tap-to-toggle (touch) mode: if the person taps to
-    // start and then forgets to tap again, don't leave the mic running
-    // forever - auto-send after 20s of held-open listening.
+    // Safety net: if a press never releases (finger drags off-screen, tab
+    // loses focus, etc), don't leave the mic running forever - auto-send
+    // after 20s of held-open listening.
     if (maxDurationTimeoutRef.current) clearTimeout(maxDurationTimeoutRef.current);
     maxDurationTimeoutRef.current = setTimeout(() => {
       if (isHeldRef.current) stopListening();
     }, 20000);
   }, [supported, beginSession, stopListening]);
 
-  // Two interaction models, chosen once based on the device:
-  //
-  // Desktop (mouse): press-and-hold, exactly as before - mouse down starts,
-  // mouse up (anywhere on the page) sends. Reliable with a mouse because
-  // there's no OS-level permission popup competing for the same gesture.
-  //
-  // Touch (phone/tablet): tap-to-toggle instead of hold-to-talk. Holding a
-  // finger down is exactly when the browser's one-time "allow microphone"
-  // prompt likes to appear, and that prompt steals the touch, so the finger
-  // lifts (release fires) before a word is spoken and the command comes
-  // through empty. Tapping once to start and tapping again to send sidesteps
-  // that race entirely and is the standard pattern for push-to-talk on touch.
-  const handlePressStart = (e) => {
+  // One gesture model for every device - press and hold to talk, release to
+  // send, exactly like a laptop. Pointer Events cover mouse, touch, and pen
+  // through the same API, which avoids the old problem where a touch could
+  // also fire a synthetic mouse event a moment later and double-trigger the
+  // mic. onPointerCancel (fired when e.g. the permission prompt or a
+  // notification swipe steals the touch mid-press) resets quietly instead
+  // of sending a half-caught word as a command.
+  const handlePointerDown = (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return; // ignore right/middle click
     e.preventDefault();
-    if (status === 'processing') return;
-
-    if (touchMode) {
-      if (status === 'idle') {
-        startListening();
-      } else if (status === 'listening') {
-        stopListening();
-      }
-      return;
+    if (status !== 'idle') return;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (err) {
+      // ignore - not all browsers support pointer capture on buttons
     }
-
-    if (status === 'listening') return;
     startListening();
   };
 
-  // Hold-to-talk release - desktop/mouse only. On touch devices this never
-  // attaches (tap-to-toggle above handles start AND stop), so a finger
-  // lifting off the button mid-sentence can never end the recording early.
   useEffect(() => {
-    if (touchMode || status !== 'listening') return undefined;
-    const release = () => stopListening();
-    window.addEventListener('mouseup', release);
-    return () => {
-      window.removeEventListener('mouseup', release);
+    if (status !== 'listening') return undefined;
+    const release = () => {
+      buzz(10);
+      stopListening();
     };
-  }, [touchMode, status, stopListening]);
+    const cancel = () => stopListening({ silent: true });
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', cancel);
+    return () => {
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointercancel', cancel);
+    };
+  }, [status, stopListening]);
 
   const cycleLanguage = () => {
     if (status !== 'idle') return; // don't switch mid-listen
@@ -265,17 +301,12 @@ const VoiceController = () => {
     toast(`Voice language: ${VOICE_LANGUAGES[next].label}`, { icon: '🌐', duration: 1500 });
   };
 
-  const statusLabel = touchMode
-    ? status === 'listening'
-      ? 'Listening… tap again to send'
+  const statusLabel =
+    status === 'listening'
+      ? 'Listening… release to send'
       : status === 'processing'
       ? 'Thinking…'
-      : 'Tap to speak a command'
-    : status === 'listening'
-    ? 'Listening… release to send'
-    : status === 'processing'
-    ? 'Thinking…'
-    : 'Hold to speak a command';
+      : 'Hold to speak a command';
 
   return (
     <div className="voice-controller">
@@ -320,10 +351,9 @@ const VoiceController = () => {
       <button
         type="button"
         className={`voice-fab voice-fab-${status}`}
-        onMouseDown={handlePressStart}
-        onTouchStart={handlePressStart}
+        onPointerDown={handlePointerDown}
         title={supported ? statusLabel : isIOS() ? 'Not supported in Safari on iPhone/iPad' : 'Voice control not supported in this browser'}
-        aria-label={touchMode ? 'Tap to give a voice command' : 'Hold to give a voice command'}
+        aria-label="Hold to give a voice command"
       >
         <span className="voice-fab-ring" />
         <span className="voice-fab-icon">

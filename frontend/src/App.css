@@ -783,16 +783,6 @@ html.dark-mode .notes-cell {
   color: #8b949e;
 }
 
-.no-data {
-  text-align: center;
-  padding: 30px;
-  color: #6b7f99;
-}
-
-html.dark-mode .no-data {
-  color: #8b949e;
-}
-
 /* ========================================
    PHONE DISPLAY
    ======================================== */
@@ -825,6 +815,16 @@ html.dark-mode .no-data {
 .btn-whatsapp-small:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.no-data {
+  text-align: center;
+  padding: 30px;
+  color: #6b7f99;
+}
+
+html.dark-mode .no-data {
+  color: #8b949e;
 }
 
 .no-phone {
@@ -2184,5 +2184,150 @@ html.dark-mode .account-value {
   .account-info-grid {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+}
+/* ========================================
+   BULK WHATSAPP MODAL
+   ======================================== */
+
+.bulk-wa-modal {
+  width: 560px;
+}
+
+.bulk-wa-hint {
+  font-size: 12.5px;
+  color: #6b7f99;
+  line-height: 1.5;
+  margin: -8px 0 16px;
+}
+
+html.dark-mode .bulk-wa-hint {
+  color: #8b949e;
+}
+
+.bulk-wa-selectall {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #f8faff;
+  border: 1px solid #e2eaf2;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a2a3a;
+}
+
+html.dark-mode .bulk-wa-selectall {
+  background: #0d1117;
+  border-color: #30363d;
+  color: #e6edf3;
+}
+
+.bulk-wa-selectall label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.bulk-wa-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7f99;
+}
+
+html.dark-mode .bulk-wa-count {
+  color: #8b949e;
+}
+
+.bulk-wa-list {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid #e9eef4;
+  border-radius: 10px;
+}
+
+html.dark-mode .bulk-wa-list {
+  border-color: #30363d;
+}
+
+.bulk-wa-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f0f3f8;
+}
+
+.bulk-wa-row:last-child {
+  border-bottom: none;
+}
+
+html.dark-mode .bulk-wa-row {
+  border-bottom-color: #21262d;
+}
+
+.bulk-wa-row-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+
+.bulk-wa-row-name {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: #1a2a3a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html.dark-mode .bulk-wa-row-name {
+  color: #e6edf3;
+}
+
+.bulk-wa-row-detail {
+  font-size: 12px;
+  color: #6b7f99;
+  white-space: nowrap;
+}
+
+html.dark-mode .bulk-wa-row-detail {
+  color: #8b949e;
+}
+
+.bulk-wa-open-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #25D366;
+  color: white;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.bulk-wa-open-btn:hover {
+  transform: translateY(-1px);
+}
+
+@media (max-width: 600px) {
+  .bulk-wa-modal {
+    width: 100%;
+  }
+  .bulk-wa-row {
+    flex-wrap: wrap;
+  }
+  .bulk-wa-row-detail {
+    white-space: normal;
   }
 }

@@ -1,6 +1,15 @@
 const Customer = require('../models/Customer');
 const ActivityLog = require('../models/ActivityLog');
 
+// Shared WhatsApp reminder text for both single-send and bulk-send, so the
+// wording never drifts between the two. Pending dues are only mentioned
+// when there actually are some, to avoid a confusing "Pending dues: PKR 0"
+// line on a customer who is already fully caught up.
+const buildReminderMessage = (c) => {
+  const duesLine = c.pendingDues > 0 ? ` You also have pending dues of PKR ${c.pendingDues}.` : '';
+  return `Dear ${c.name}, this is a reminder that your internet bill of PKR ${c.monthlyFee} is due.${duesLine} Please clear it at your earliest convenience. Thank you.`;
+};
+
 // @desc    Send WhatsApp reminder to single customer
 // @route   POST /api/whatsapp/send
 // @access  Private
@@ -28,9 +37,7 @@ exports.sendWhatsAppReminder = async (req, res) => {
     }
     phone = phone.replace(/\D/g, '');
 
-    const defaultMessage = `Dear ${customer.name},\n\nYour ISP bill of PKR ${customer.monthlyFee} is due.\nPlease pay at your earliest convenience.\n\nThank you for choosing ISP Muhammad Shah.`;
-    
-    const finalMessage = message || defaultMessage;
+    const finalMessage = message || buildReminderMessage(customer);
     const encodedMessage = encodeURIComponent(finalMessage);
     const whatsappUrl = `https://wa.me/${phone}?text=${encodedMessage}`;
 
@@ -62,10 +69,17 @@ exports.sendWhatsAppReminder = async (req, res) => {
 // @access  Private
 exports.sendBulkWhatsApp = async (req, res) => {
   try {
-    const customers = await Customer.find({
-      paymentStatus: 'Unpaid',
-      phone: { $ne: '', $exists: true }
-    });
+    // By default this targets every Unpaid customer with a phone number.
+    // If specific customers were selected in the "Bulk WhatsApp" modal,
+    // customerIds narrows it down (still only ever Unpaid customers, as a
+    // safety net).
+    const { customerIds } = req.body || {};
+    const query = { paymentStatus: 'Unpaid', phone: { $ne: '', $exists: true } };
+    if (Array.isArray(customerIds) && customerIds.length > 0) {
+      query.customerId = { $in: customerIds };
+    }
+
+    const customers = await Customer.find(query);
 
     if (customers.length === 0) {
       return res.json({
@@ -85,12 +99,14 @@ exports.sendBulkWhatsApp = async (req, res) => {
       }
       phone = phone.replace(/\D/g, '');
 
-      const message = `Dear ${c.name},\n\nYour ISP bill of PKR ${c.monthlyFee} is due.\nPlease pay at your earliest convenience.\n\nThank you for choosing ISP Muhammad Shah.`;
-      
+      const message = buildReminderMessage(c);
+
       return {
         name: c.name,
         customerId: c.customerId,
         phone: c.phone,
+        monthlyFee: c.monthlyFee,
+        pendingDues: c.pendingDues || 0,
         whatsappUrl: `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
       };
     });

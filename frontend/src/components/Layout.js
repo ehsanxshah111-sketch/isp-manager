@@ -293,8 +293,6 @@ const Layout = () => {
                 <div className="top-bar-userrole">{user?.role || 'Administrator'}</div>
               </div>
             </div>
-
-            <span className="current-time">{new Date().toLocaleTimeString()}</span>
           </div>
         </header>
         <div className="content">

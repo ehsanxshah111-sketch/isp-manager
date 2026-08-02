@@ -286,12 +286,6 @@ html.dark-mode .header-banner-track span {
   transform: scale(1.05);
 }
 
-.current-time {
-  font-size: 14px;
-  color: #6b7f99;
-  transition: color 0.3s ease;
-}
-
 .content {
   padding: 24px;
   transition: color 0.3s ease;
@@ -426,10 +420,6 @@ html.dark-mode .header-banner-track span {
     font-size: 12px !important;
   }
 
-  .current-time {
-    font-size: 11px !important;
-  }
-
   .content {
     padding: 12px !important;
   }
@@ -516,10 +506,6 @@ html.dark-mode .toggle-btn {
 
 html.dark-mode .mobile-toggle {
   color: #e6edf3;
-}
-
-html.dark-mode .current-time {
-  color: #8b949e;
 }
 
 html.dark-mode .theme-toggle-btn {
