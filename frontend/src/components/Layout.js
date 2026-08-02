@@ -5,6 +5,7 @@ import API from '../utils/api';
 import toast from 'react-hot-toast';
 import VoiceController from './VoiceController';
 import { subscribeBannerText } from '../utils/bannerBus';
+import { LOGO_DATA_URI } from '../assets/logoData';
 import './Layout.css';
 
 const Layout = () => {
@@ -196,7 +197,7 @@ const Layout = () => {
       {/* Sidebar */}
       <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
         <div className="sidebar-brand">
-          <img src="/favicon-192.png" alt="ISP Logo" className="brand-icon-img" />
+          <img src={LOGO_DATA_URI} alt="ISP Logo" className="brand-icon-img" />
           <span className="brand-text">ISP Manager</span>
         </div>
         <nav className="sidebar-nav">

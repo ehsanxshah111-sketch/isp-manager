@@ -900,37 +900,87 @@ html.dark-mode .record-count {
    ======================================== */
 
 .login-page {
+  position: relative;
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: #f0f4f9;
-  transition: background 0.3s ease;
+  padding: 20px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(212, 175, 55, 0.16), transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(212, 175, 55, 0.12), transparent 50%),
+    linear-gradient(160deg, #f7f3ea 0%, #efe6d3 55%, #f3ead9 100%);
+  transition: background 0.4s ease;
 }
 
 html.dark-mode .login-page {
-  background: #0d1117;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(212, 175, 55, 0.14), transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(212, 175, 55, 0.10), transparent 50%),
+    linear-gradient(160deg, #0a0a0c 0%, #14110a 55%, #0d0d0f 100%);
+}
+
+.login-theme-toggle {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  z-index: 5;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(212, 175, 55, 0.5);
+  background: rgba(255, 255, 255, 0.6);
+  color: #3a2f1a;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: 0.2s;
+}
+
+.login-theme-toggle:hover {
+  background: rgba(212, 175, 55, 0.18);
+  transform: translateY(-1px);
+}
+
+html.dark-mode .login-theme-toggle {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e9d9a8;
+  border-color: rgba(212, 175, 55, 0.4);
+}
+
+html.dark-mode .login-theme-toggle:hover {
+  background: rgba(212, 175, 55, 0.14);
 }
 
 .login-container {
   width: 100%;
   max-width: 420px;
   padding: 20px;
+  position: relative;
+  z-index: 2;
 }
 
 .login-box {
-  background: white;
-  padding: 40px 36px;
-  border-radius: 24px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.1);
-  border: 1px solid #e9eef4;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 44px 36px 36px;
+  border-radius: 26px;
+  box-shadow: 0 25px 70px rgba(58, 47, 26, 0.18), 0 0 0 1px rgba(212, 175, 55, 0.25) inset;
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  backdrop-filter: blur(14px);
   transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 html.dark-mode .login-box {
-  background: #161b22;
-  border-color: #30363d;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  background: rgba(18, 17, 15, 0.72);
+  border-color: rgba(212, 175, 55, 0.35);
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(212, 175, 55, 0.2) inset;
+}
+
+.login-logo-glow {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
 }
 
 .login-icon {
@@ -941,34 +991,58 @@ html.dark-mode .login-box {
 
 .login-icon-img {
   display: block;
-  width: 96px;
-  height: 96px;
+  width: 104px;
+  height: 104px;
   object-fit: contain;
-  margin: 0 auto 12px;
-  border-radius: 16px;
+  border-radius: 20px;
+  padding: 10px;
+  background: radial-gradient(circle, rgba(212, 175, 55, 0.18), transparent 70%);
+  filter: drop-shadow(0 6px 18px rgba(212, 175, 55, 0.35));
 }
 
 .login-title {
   text-align: center;
-  font-size: 26px;
-  margin: 0 0 8px 0;
-  color: #1a2a3a;
-  transition: color 0.3s ease;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin: 0 0 2px 0;
+  background: linear-gradient(90deg, #b8912f, #e6c463 45%, #b8912f);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
-html.dark-mode .login-title {
-  color: #e6edf3;
+.login-brand-tag {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #8a7a4d;
+  margin: 0;
+}
+
+html.dark-mode .login-brand-tag {
+  color: #cbb46b;
+}
+
+.login-divider {
+  width: 64px;
+  height: 2px;
+  margin: 16px auto 14px;
+  background: linear-gradient(90deg, transparent, #d4af37, transparent);
 }
 
 .login-subtitle {
   text-align: center;
-  color: #6b7f99;
-  margin-bottom: 28px;
+  color: #6b5f42;
+  margin-bottom: 26px;
+  font-size: 14px;
   transition: color 0.3s ease;
 }
 
 html.dark-mode .login-subtitle {
-  color: #8b949e;
+  color: #a8987a;
 }
 
 .login-input-group {
@@ -979,36 +1053,37 @@ html.dark-mode .login-subtitle {
   display: block;
   font-weight: 600;
   margin-bottom: 4px;
-  color: #1a2a3a;
+  color: #3a2f1a;
   font-size: 14px;
   transition: color 0.3s ease;
 }
 
 html.dark-mode .login-label {
-  color: #e6edf3;
+  color: #e9d9a8;
 }
 
 .login-input {
   width: 100%;
   padding: 12px 16px;
-  border: 2px solid #e2eaf2;
+  border: 1.5px solid rgba(212, 175, 55, 0.35);
   border-radius: 10px;
   font-size: 15px;
   box-sizing: border-box;
-  background: #f8faff;
-  color: #1a2a3a;
+  background: rgba(255, 255, 255, 0.6);
+  color: #2b2417;
   transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
 html.dark-mode .login-input {
-  background: #0d1117;
-  color: #e6edf3;
-  border-color: #30363d;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f1e6c8;
+  border-color: rgba(212, 175, 55, 0.3);
 }
 
 .login-input:focus {
-  border-color: #2a7de1;
+  border-color: #d4af37;
   outline: none;
+  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.18);
 }
 
 .password-wrapper {
@@ -1031,44 +1106,59 @@ html.dark-mode .login-input {
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 6px;
-  color: #6b7f99;
+  color: #8a7a4d;
   transition: color 0.2s;
 }
 
 .password-toggle-btn:hover {
-  color: #2a7de1;
+  color: #b8912f;
 }
 
 html.dark-mode .password-toggle-btn {
-  color: #8b949e;
+  color: #a8987a;
 }
 
 html.dark-mode .password-toggle-btn:hover {
-  color: #58a6ff;
+  color: #e6c463;
 }
 
 .login-btn {
   width: 100%;
   padding: 14px;
-  background: #2a7de1;
-  color: white;
+  margin-top: 6px;
+  background: linear-gradient(135deg, #d4af37, #b8912f 55%, #d4af37);
+  color: #1a1408;
   border: none;
   border-radius: 10px;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.3px;
   cursor: pointer;
+  box-shadow: 0 10px 25px rgba(212, 175, 55, 0.35);
   transition: 0.2s;
 }
 
 .login-btn:hover {
-  background: #1a6ad0;
   transform: translateY(-2px);
+  box-shadow: 0 14px 32px rgba(212, 175, 55, 0.45);
 }
 
 .login-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
   transform: none;
+}
+
+.login-footer-tag {
+  text-align: center;
+  margin-top: 18px;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  color: #8a7a4d;
+}
+
+html.dark-mode .login-footer-tag {
+  color: #a8987a;
 }
 
 /* ========================================

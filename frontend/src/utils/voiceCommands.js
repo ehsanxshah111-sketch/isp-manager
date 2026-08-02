@@ -87,6 +87,7 @@ const MULTILINGUAL_KEYWORDS = [
   [/\b(disable[d]?|غیر فعال|ਅਯੋਗ)\b/gi, 'disable'],
   [/\b(phone number|number|mobile|contact number|whatsapp number|نمبر|موبائل|ਨੰਬਰ)\b/gi, 'phone'],
   [/\b(address|pata|پتہ|ایڈریس|ਪਤਾ)\b/gi, 'address'],
+  [/\b(connection date|billing date|due date|bill date|din|tareekh|تاریخ|دن|ਤਾਰੀਖ਼|ਦਿਨ)\b/gi, 'day'],
   [/\b(profile|details?|record|info|تفصیلات|پروفائل)\b/gi, 'details'],
   [/\b(package|plan|پیکج|پلان)\b/gi, 'package'],
   [/\b(how much|kitna|کتنا)\b/gi, 'how much'],
@@ -262,6 +263,8 @@ const MESSAGES = {
     packageUpdated: (n, pkg) => `${n}'s package is now ${pkg}.`,
     phoneUpdated: (n) => `${n}'s phone number has been updated.`,
     addressUpdated: (n) => `${n}'s address has been updated.`,
+    dayUpdated: (n, d) => `${n}'s billing day is now day ${d}.`,
+    missedDay: (n) => `I didn't catch a valid day (1-31) for ${n}.`,
     statLine: (label, value) => `Your ${label} is ${value}.`,
     genericError: 'Something went wrong running that command.',
     noPhoneOnFile: (n) => `${n} doesn't have a phone number saved, so I can't send a WhatsApp reminder.`,
@@ -325,6 +328,8 @@ const MESSAGES = {
     packageUpdated: (n, pkg) => `${n} کا پیکج اب ${pkg} ہے۔`,
     phoneUpdated: (n) => `${n} کا فون نمبر اپڈیٹ کر دیا گیا۔`,
     addressUpdated: (n) => `${n} کا پتہ اپڈیٹ کر دیا گیا۔`,
+    dayUpdated: (n, d) => `${n} کی بلنگ تاریخ اب دن ${d} ہے۔`,
+    missedDay: (n) => `${n} کے لیے درست دن (1-31) سمجھ نہیں آیا۔`,
     statLine: (label, value) => `آپ کا ${label} ${value} ہے۔`,
     genericError: 'کچھ غلط ہو گیا، دوبارہ کوشش کریں۔',
     noPhoneOnFile: (n) => `${n} کا فون نمبر محفوظ نہیں ہے، اس لیے واٹس ایپ یاد دہانی نہیں بھیج سکتا۔`,
@@ -381,6 +386,8 @@ const MESSAGES = {
     packageUpdated: (n, pkg) => `${n} ਦਾ ਪੈਕੇਜ ਹੁਣ ${pkg} ਹੈ।`,
     phoneUpdated: (n) => `${n} ਦਾ ਫੋਨ ਨੰਬਰ ਅੱਪਡੇਟ ਕਰ ਦਿੱਤਾ।`,
     addressUpdated: (n) => `${n} ਦਾ ਪਤਾ ਅੱਪਡੇਟ ਕਰ ਦਿੱਤਾ।`,
+    dayUpdated: (n, d) => `${n} ਦਾ ਬਿਲਿੰਗ ਦਿਨ ਹੁਣ ${d} ਹੈ।`,
+    missedDay: (n) => `${n} ਲਈ ਸਹੀ ਦਿਨ (1-31) ਸਮਝ ਨਹੀਂ ਆਇਆ।`,
     statLine: (label, value) => `ਤੁਹਾਡਾ ${label} ${value} ਹੈ।`,
     genericError: 'ਕੁਝ ਗਲਤ ਹੋ ਗਿਆ, ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।',
     noPhoneOnFile: (n) => `${n} ਦਾ ਫੋਨ ਨੰਬਰ ਸੇਵ ਨਹੀਂ ਹੈ, ਇਸ ਲਈ ਵਟਸਐਪ ਰਿਮਾਈਂਡਰ ਨਹੀਂ ਭੇਜ ਸਕਦਾ।`,
@@ -494,10 +501,14 @@ function extractExpenseDetails(normalizedText) {
 }
 
 function cleanName(raw) {
-  return raw
-    .replace(/'s$/i, '')
-    .replace(/^(customer|the|for|mr|mrs|ms)\s+/i, '')
-    .trim();
+  let name = (raw || '').replace(/'s$/i, '').trim();
+  const fillerRe = /^(customer|the|for|mr|mrs|ms|names?|named|called)\s+/i;
+  let previous;
+  do {
+    previous = name;
+    name = name.replace(fillerRe, '').trim();
+  } while (name !== previous);
+  return name;
 }
 
 function levenshtein(a, b) {
@@ -620,6 +631,7 @@ const PATTERNS = [
   { key: 'setPackage', regex: /(?:sets?|updates?|changes?)\s+(.+?)(?:'s)?\s+package(?:s|es)?\s+(?:to|as)\s+(.+)/i },
   { key: 'setPhone', regex: /(?:sets?|updates?|changes?)\s+(.+?)(?:'s)?\s+phone(?:s|es)?\s+(?:to|as)\s+(.+)/i },
   { key: 'setAddress', regex: /(?:sets?|updates?|changes?)\s+(.+?)(?:'s)?\s+address(?:es)?\s+(?:to|as)\s+(.+)/i },
+  { key: 'setDay', regex: /(?:sets?|updates?|changes?)\s+(.+?)(?:'s)?\s+(?:day|date)\s+(?:to|as)\s+(\d{1,2}|[a-z-]+)/i },
 
   { key: 'setStatus', regex: /(?:sets?|changes?|marks?)\s+(.+?)(?:'s)?\s+status(?:es)?\s+(?:to|as)\s+(active|cut ?off|disable[d]?)/i },
   { key: 'setStatus', regex: /^(.+?)\s+(?:should be|is now)\s+(active|cut ?off|disable[d]?)\s*$/i },
@@ -1011,25 +1023,28 @@ async function runParsedCommand(match, ctx, lang, setPending) {
     const remainder = (groups[0] || '').trim();
     if (!remainder) return { ok: false, message: t(lang, 'askNameFee') };
 
-    const nameMatch = remainder.match(/^(.+?)(?:\s+with)?(?:\s+(?:package|fee|phone|address)\b|$)/i);
+    const nameMatch = remainder.match(/^(.+?)(?:\s+with)?(?:\s+(?:package|fee|phone|address|day|date)\b|$)/i);
     const name = cleanName(nameMatch ? nameMatch[1] : remainder);
     if (!name) return { ok: false, message: t(lang, 'missedName') };
 
-    const packageMatch = remainder.match(/package\s+([a-z0-9\s]+?)(?=\s+(?:fee|phone|address)\b|$)/i);
-    const feeMatch = remainder.match(/fee\s+([\w\s]+?)(?=\s+(?:phone|package|address)\b|$)/i);
+    const packageMatch = remainder.match(/package\s+([a-z0-9\s]+?)(?=\s+(?:fee|phone|address|day|date)\b|$)/i);
+    const feeMatch = remainder.match(/fee\s+([\w\s]+?)(?=\s+(?:phone|package|address|day|date)\b|$)/i);
     const phoneMatch = remainder.match(/phone\s+([\d\s]+)/i);
-    const addressMatch = remainder.match(/address\s+(.+?)(?=\s+(?:fee|package|phone)\b|$)/i);
+    const addressMatch = remainder.match(/address\s+(.+?)(?=\s+(?:fee|package|phone|day|date)\b|$)/i);
+    const dayMatch = remainder.match(/(?:day|date)\s+([\w-]+(?:\s+[\w-]+)?)(?=\s+(?:fee|package|phone|address)\b|$)/i);
 
     const monthlyFee = feeMatch ? wordsToNumber(feeMatch[1]) : null;
     if (monthlyFee == null) return { ok: false, message: t(lang, 'askFee', name) };
 
-    const today = new Date();
+    let day = dayMatch ? wordsToNumber(dayMatch[1]) : null;
+    if (day == null || day < 1 || day > 31) day = new Date().getDate();
+
     const payload = {
       name,
       customerId: `VC-${Date.now().toString().slice(-6)}`,
       monthlyFee,
       pendingDues: 0,
-      connectionDate: String(today.getDate()),
+      connectionDate: String(day),
       package: packageMatch ? packageMatch[1].trim() : '',
       phone: phoneMatch ? phoneMatch[1].replace(/\s+/g, '') : '',
       address: addressMatch ? addressMatch[1].trim() : '',
@@ -1105,6 +1120,17 @@ async function runParsedCommand(match, ctx, lang, setPending) {
     await ctx.API.put(`/customers/${customer._id}`, { address: rawAddress.trim() });
     ctx.refreshCustomers();
     return { ok: true, message: t(lang, 'addressUpdated', customer.name) };
+  }
+
+  if (key === 'setDay') {
+    const [rawName, rawDay] = groups;
+    const customer = findCustomer(customers, rawName);
+    if (!customer) return { ok: false, message: t(lang, 'customerNotFound', rawName) };
+    const day = wordsToNumber(rawDay);
+    if (day == null || day < 1 || day > 31) return { ok: false, message: t(lang, 'missedDay', customer.name) };
+    await ctx.API.put(`/customers/${customer._id}`, { connectionDate: String(day) });
+    ctx.refreshCustomers();
+    return { ok: true, message: t(lang, 'dayUpdated', customer.name, day) };
   }
 
   if (key === 'setStatus') {

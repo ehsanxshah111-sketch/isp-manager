@@ -1,14 +1,45 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { LOGO_DATA_URI } from '../assets/logoData';
 
 const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  // Same 'darkMode' preference the rest of the app (Layout.js) reads and
+  // writes, so the choice made here carries straight through after login,
+  // and the choice made on the dashboard is already reflected here too.
+  useEffect(() => {
+    const saved = localStorage.getItem('darkMode');
+    const isDark = saved === 'true';
+    setDarkMode(isDark);
+    if (isDark) {
+      document.documentElement.classList.add('dark-mode');
+      document.body.classList.add('dark-mode');
+    } else {
+      document.documentElement.classList.remove('dark-mode');
+      document.body.classList.remove('dark-mode');
+    }
+  }, []);
+
+  const toggleDarkMode = () => {
+    const next = !darkMode;
+    setDarkMode(next);
+    localStorage.setItem('darkMode', next.toString());
+    if (next) {
+      document.documentElement.classList.add('dark-mode');
+      document.body.classList.add('dark-mode');
+    } else {
+      document.documentElement.classList.remove('dark-mode');
+      document.body.classList.remove('dark-mode');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -22,10 +53,22 @@ const Login = () => {
 
   return (
     <div className="login-page">
+      <button
+        type="button"
+        className="login-theme-toggle"
+        onClick={toggleDarkMode}
+        title={darkMode ? 'Switch to light theme' : 'Switch to dark theme'}
+      >
+        {darkMode ? '☀️ Light' : '🌙 Dark'}
+      </button>
       <div className="login-container">
         <div className="login-box">
-          <img src="/favicon-192.png" alt="ISP Logo" className="login-icon-img" />
-          <h1 className="login-title">ISP Management</h1>
+          <div className="login-logo-glow">
+            <img src={LOGO_DATA_URI} alt="ISP Logo" className="login-icon-img" />
+          </div>
+          <h1 className="login-title">ISP Manager</h1>
+          <p className="login-brand-tag">Zeep Broad Brand</p>
+          <div className="login-divider" />
           <p className="login-subtitle">Sign in to your account</p>
           <form onSubmit={handleSubmit}>
             <div className="login-input-group">
@@ -61,10 +104,11 @@ const Login = () => {
               </div>
             </div>
             <button type="submit" disabled={loading} className="login-btn">
-              {loading ? 'Loading...' : 'Sign In'}
+              {loading ? 'Signing In...' : 'Sign In'}
             </button>
           </form>
         </div>
+        <p className="login-footer-tag">Owned by Muhammad Shah</p>
       </div>
     </div>
   );
