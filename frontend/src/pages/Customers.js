@@ -444,13 +444,22 @@ const Customers = () => {
         // literal word "customerid".
         const idCol = header.findIndex((h) => h.includes('customerid') || h.includes('username'));
         const phoneCol = header.findIndex((h) => h.includes('phone'));
+        // Optional - only used as a last-resort match on the backend when a
+        // row's customerId doesn't match anything. Skip whatever column is
+        // already the ID column so a "Username" id-column doesn't also get
+        // picked up here (it contains "name" as a substring).
+        const nameCol = header.findIndex((h, i) => i !== idCol && h.includes('name'));
         if (idCol === -1 || phoneCol === -1) {
           setImportParseError('Could not find a "customerId" (or "Username") column and a "Phone" column in this file\'s header.');
           setImportRecords([]);
           return;
         }
         const records = rows.slice(1)
-          .map((r) => ({ customerId: (r[idCol] || '').trim(), phone: (r[phoneCol] || '').trim() }))
+          .map((r) => ({
+            customerId: (r[idCol] || '').trim(),
+            phone: (r[phoneCol] || '').trim(),
+            name: nameCol !== -1 ? (r[nameCol] || '').trim() : ''
+          }))
           .filter((r) => r.customerId && r.phone);
         setImportRecords(records);
         if (records.length === 0) {
@@ -821,9 +830,19 @@ const Customers = () => {
                     {importResult.notFoundCount > 0 && ` · ${importResult.notFoundCount} not found on this website`}
                   </span>
                 </div>
+                {(importResult.updatedViaNormalizedId > 0 || importResult.updatedViaName > 0) && (
+                  <div className="bulk-wa-row">
+                    <span className="bulk-wa-row-detail">
+                      Of those, {importResult.updatedViaNormalizedId > 0 && `${importResult.updatedViaNormalizedId} matched by ID ignoring case/punctuation`}
+                      {importResult.updatedViaNormalizedId > 0 && importResult.updatedViaName > 0 && ' and '}
+                      {importResult.updatedViaName > 0 && `${importResult.updatedViaName} matched by name (ID didn't match anything)`}
+                      {' - check those in the Change History if you want to double-check them.'}
+                    </span>
+                  </div>
+                )}
                 {importResult.notFound?.length > 0 && (
                   <div className="bulk-wa-row" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
-                    <span className="bulk-wa-row-name">Not matched (no customer with this ID exists):</span>
+                    <span className="bulk-wa-row-name">Not matched (no customer with this ID or name exists):</span>
                     <span className="bulk-wa-row-detail">{importResult.notFound.join(', ')}</span>
                   </div>
                 )}

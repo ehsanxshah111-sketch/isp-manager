@@ -479,10 +479,23 @@ app.put('/api/customers/:id', auth, async (req, res) => {
 
 // @desc  Bulk-import phone numbers matched by customerId (e.g. from a CSV of
 //        numbers recovered from old PDFs/receipts). This only ever UPDATES
-//        customers who already exist in the website by an exact customerId
-//        match - it never creates a new customer, and anything that doesn't
-//        match an existing customerId is reported back instead of silently
-//        skipped, so the client can see exactly what happened.
+//        customers who already exist in the website - it never creates a new
+//        customer. Matching happens in three passes, each one only used if
+//        the previous one didn't find anything, so the safest match always
+//        wins:
+//          1. Exact customerId match (case + spacing must match exactly).
+//          2. Same customerId but ignoring case/punctuation/spacing - catches
+//             things like "M68.Krachi.Sale.Mala" vs "M68KrachiSaleMala", or a
+//             different case. Only used when the normalized form is unique
+//             across all customers, so it can never guess wrong between two
+//             similar IDs.
+//          3. The PDF's name column matched against the customer's stored
+//             name (same case/punctuation-insensitive comparison) - only
+//             used when that normalized name matches exactly ONE customer,
+//             and only as a last resort after both ID passes fail.
+//        Anything that still doesn't match is reported back, never guessed.
+const normalizeForMatch = (s) => (s || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+
 app.post('/api/customers/import-phones', auth, async (req, res) => {
   try {
     const records = Array.isArray(req.body.records) ? req.body.records : [];
@@ -490,18 +503,58 @@ app.post('/api/customers/import-phones', auth, async (req, res) => {
       return res.status(400).json({ success: false, message: 'No records provided' });
     }
 
+    const allCustomers = await Customer.find();
+
+    // Normalized-ID index - only keep keys that map to exactly ONE customer,
+    // so this pass can never pick the wrong one between two similar IDs.
+    const idIndex = new Map(); // normalizedId -> customer | 'AMBIGUOUS'
+    for (const c of allCustomers) {
+      const key = normalizeForMatch(c.customerId);
+      if (!key) continue;
+      idIndex.set(key, idIndex.has(key) ? 'AMBIGUOUS' : c);
+    }
+
+    // Normalized-name index - same "only if unique" safety rule.
+    const nameIndex = new Map(); // normalizedName -> customer | 'AMBIGUOUS'
+    for (const c of allCustomers) {
+      const key = normalizeForMatch(c.name);
+      if (!key) continue;
+      nameIndex.set(key, nameIndex.has(key) ? 'AMBIGUOUS' : c);
+    }
+
     let updated = 0;
     let unchanged = 0;
+    let updatedViaNormalizedId = 0;
+    let updatedViaName = 0;
     const notFound = [];
 
     for (const rec of records) {
       const customerId = (rec.customerId || '').toString().trim();
+      const name = (rec.name || '').toString().trim();
       const phone = (rec.phone || '').toString().trim();
       if (!customerId || !phone) continue;
 
-      const existing = await Customer.findOne({ customerId });
+      let existing = await Customer.findOne({ customerId });
+      let matchMethod = 'exact';
+
       if (!existing) {
-        notFound.push(customerId);
+        const byId = idIndex.get(normalizeForMatch(customerId));
+        if (byId && byId !== 'AMBIGUOUS') {
+          existing = byId;
+          matchMethod = 'normalized-id';
+        }
+      }
+
+      if (!existing && name) {
+        const byName = nameIndex.get(normalizeForMatch(name));
+        if (byName && byName !== 'AMBIGUOUS') {
+          existing = byName;
+          matchMethod = 'name';
+        }
+      }
+
+      if (!existing) {
+        notFound.push(name ? `${customerId} (${name})` : customerId);
         continue;
       }
 
@@ -514,20 +567,30 @@ app.post('/api/customers/import-phones', auth, async (req, res) => {
       existing.phone = phone;
       await existing.save();
       updated++;
+      if (matchMethod === 'normalized-id') updatedViaNormalizedId++;
+      if (matchMethod === 'name') updatedViaName++;
 
+      const matchNote = matchMethod === 'exact' ? '' : ` [matched by ${matchMethod === 'name' ? 'name' : 'customerId, ignoring case/punctuation'} - the import file said "${customerId}"]`;
       await logActivity({
         req,
         action: 'Customer Updated',
         entityType: 'Customer',
         entityId: existing._id,
         changes: [{ field: 'phone', from: oldPhone, to: phone }],
-        details: `Updated ${existing.name} (${existing.customerId}): phone: "${oldPhone}" \u2192 "${phone}" (bulk phone import)`
+        details: `Updated ${existing.name} (${existing.customerId}): phone: "${oldPhone}" \u2192 "${phone}" (bulk phone import${matchNote})`
       });
     }
 
     res.json({
       success: true,
-      data: { updated, unchanged, notFoundCount: notFound.length, notFound }
+      data: {
+        updated,
+        updatedViaNormalizedId,
+        updatedViaName,
+        unchanged,
+        notFoundCount: notFound.length,
+        notFound
+      }
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
