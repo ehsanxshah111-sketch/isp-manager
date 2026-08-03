@@ -63,6 +63,21 @@ const PackageExpiry = () => {
   const [sending, setSending] = useState(false);
   const tunePlayedRef = useRef(false);
 
+  // ===== Edit modal state =====
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingEntry, setEditingEntry] = useState(null); // the expiry-report entry being edited
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    customerId: '',
+    monthlyFee: '',
+    pendingDues: '0',
+    connectionDate: '',
+    phone: '',
+    status: 'Active',
+    paymentStatus: 'Unpaid',
+  });
+  const [saving, setSaving] = useState(false);
+
   useEffect(() => {
     loadExpiry();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -109,6 +124,47 @@ const PackageExpiry = () => {
       console.error('Send expiry email error:', error);
     } finally {
       setSending(false);
+    }
+  };
+
+  // Opens the edit modal pre-filled with this row's customer, so the billing
+  // day, fee, dues, phone, or status can be corrected right from this page
+  // without having to go find the same customer over on the Customers page.
+  const openEditModal = (entry) => {
+    const c = entry.customer;
+    setEditingEntry(entry);
+    setEditFormData({
+      name: c.name,
+      customerId: c.customerId,
+      monthlyFee: c.monthlyFee,
+      pendingDues: c.pendingDues || 0,
+      connectionDate: c.connectionDate || '',
+      phone: c.phone || '',
+      status: c.status,
+      paymentStatus: c.paymentStatus,
+    });
+    setShowEditModal(true);
+  };
+
+  const handleEditInputChange = (e) => {
+    setEditFormData({ ...editFormData, [e.target.name]: e.target.value });
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingEntry) return;
+    setSaving(true);
+    try {
+      await API.put(`/customers/${editingEntry.customer._id}`, editFormData);
+      toast.success('Customer updated successfully!');
+      setShowEditModal(false);
+      setEditingEntry(null);
+      loadExpiry(true);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Update failed');
+      console.error('Error:', error);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -177,11 +233,12 @@ const PackageExpiry = () => {
               <th>Monthly Fee</th>
               <th>Billing Day</th>
               <th>Status</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
             {filteredEntries.length === 0 ? (
-              <tr><td colSpan="6" className="no-data">No customers in this view</td></tr>
+              <tr><td colSpan="7" className="no-data">No customers in this view</td></tr>
             ) : (
               filteredEntries.map((e) => (
                 <tr key={e.customer._id}>
@@ -196,12 +253,79 @@ const PackageExpiry = () => {
                     </span>
                     <div className="expiry-days-note">{formatDays(e)}</div>
                   </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="action-btn"
+                      onClick={() => openEditModal(e)}
+                      title="Edit billing day, fee, dues, phone or status"
+                    >
+                      ✏️ Edit
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+
+      {showEditModal && (
+        <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>✏️ Edit Customer{editingEntry ? ` - ${editingEntry.customer.name}` : ''}</h3>
+            <form onSubmit={handleEditSubmit}>
+              <div className="modal-grid">
+                <div className="form-group">
+                  <label>Name *</label>
+                  <input type="text" name="name" value={editFormData.name} onChange={handleEditInputChange} required />
+                </div>
+                <div className="form-group">
+                  <label>Customer ID *</label>
+                  <input type="text" name="customerId" value={editFormData.customerId} onChange={handleEditInputChange} required />
+                </div>
+                <div className="form-group">
+                  <label>Monthly Fee (PKR) *</label>
+                  <input type="number" name="monthlyFee" value={editFormData.monthlyFee} onChange={handleEditInputChange} required />
+                </div>
+                <div className="form-group">
+                  <label>Pending Dues</label>
+                  <input type="number" name="pendingDues" value={editFormData.pendingDues} onChange={handleEditInputChange} />
+                </div>
+                <div className="form-group">
+                  <label>Billing Day (1-31)</label>
+                  <input type="text" name="connectionDate" value={editFormData.connectionDate} onChange={handleEditInputChange} placeholder="e.g., 15" />
+                </div>
+                <div className="form-group">
+                  <label>Phone Number</label>
+                  <input type="text" name="phone" value={editFormData.phone} onChange={handleEditInputChange} placeholder="e.g., 0300-1234567" />
+                </div>
+                <div className="form-group">
+                  <label>Status</label>
+                  <select name="status" value={editFormData.status} onChange={handleEditInputChange}>
+                    <option value="Active">Active</option>
+                    <option value="Cut Off">Cut Off</option>
+                    <option value="Disable">Disable</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Payment Status</label>
+                  <select name="paymentStatus" value={editFormData.paymentStatus} onChange={handleEditInputChange}>
+                    <option value="Unpaid">Unpaid</option>
+                    <option value="Paid">Paid</option>
+                    <option value="1 YEAR ADVANCED">1 YEAR ADVANCED</option>
+                    <option value="FREE">FREE</option>
+                  </select>
+                </div>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="cancel-btn" onClick={() => setShowEditModal(false)}>Cancel</button>
+                <button type="submit" className="save-btn" disabled={saving}>{saving ? 'Saving...' : 'Save Changes'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

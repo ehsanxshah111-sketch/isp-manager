@@ -698,6 +698,57 @@ html.dark-mode .status-badge.free {
   color: #b0b0b0;
 }
 
+/* ===== Package Expiry badges ===== */
+.status-badge.expiry-overdue {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+html.dark-mode .status-badge.expiry-overdue {
+  background: #3a1a1a;
+  color: #f8a0a0;
+}
+
+.status-badge.expiry-today {
+  background: #ffe5cc;
+  color: #8a4b00;
+}
+
+html.dark-mode .status-badge.expiry-today {
+  background: #3a2a1a;
+  color: #ffb870;
+}
+
+.status-badge.expiry-upcoming {
+  background: #cce5ff;
+  color: #004085;
+}
+
+html.dark-mode .status-badge.expiry-upcoming {
+  background: #1a2a4a;
+  color: #80b8ff;
+}
+
+.status-badge.expiry-ok {
+  background: #d4edda;
+  color: #155724;
+}
+
+html.dark-mode .status-badge.expiry-ok {
+  background: #1a3a2a;
+  color: #7ee8a0;
+}
+
+.expiry-days-note {
+  font-size: 11px;
+  color: #888;
+  margin-top: 3px;
+}
+
+html.dark-mode .expiry-days-note {
+  color: #999;
+}
+
 .status-badge.customer-added {
   background: #d4edda;
   color: #155724;
