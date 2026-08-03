@@ -315,7 +315,7 @@ const getMailTransporter = () => {
   return mailTransporter;
 };
 
-const NOTIFY_EMAIL_TO = process.env.NOTIFY_EMAIL_TO || 'shahm2254@gmail.com';
+const NOTIFY_EMAIL_TO = process.env.NOTIFY_EMAIL_TO || 'mrshah147369@gmail.com';
 
 const expiryRowHtml = (e, color) => `
   <tr>
