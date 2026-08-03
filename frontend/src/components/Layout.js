@@ -20,7 +20,6 @@ const Layout = () => {
   const [editBrandName, setEditBrandName] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploadingPicture, setUploadingPicture] = useState(false);
-  const [expiryUrgentCount, setExpiryUrgentCount] = useState(0);
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -69,31 +68,6 @@ const Layout = () => {
       setSidebarOpen(false);
     }
   }, [location.pathname]);
-
-  // Package Expiry badge - polled every 5 minutes so the sidebar always
-  // shows how many active customers are overdue or due today, no matter
-  // which page you're currently on.
-  useEffect(() => {
-    let cancelled = false;
-    const loadExpirySummary = () => {
-      API.get('/customers/expiry-summary')
-        .then((res) => {
-          const data = res.data?.data;
-          if (!cancelled && data) {
-            setExpiryUrgentCount((data.overdue || 0) + (data.today || 0));
-          }
-        })
-        .catch(() => {
-          // Non-critical - the badge just stays at its last known count.
-        });
-    };
-    loadExpirySummary();
-    const interval = setInterval(loadExpirySummary, 5 * 60 * 1000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, []);
 
   const toggleDarkMode = () => {
     const newMode = !darkMode;
@@ -200,7 +174,7 @@ const Layout = () => {
   const menuItems = [
     { path: '/dashboard', icon: '📊', label: 'Dashboard' },
     { path: '/customers', icon: '👥', label: 'Customers' },
-    { path: '/expiry', icon: '⏰', label: 'Package Expiry' },
+    { path: '/billing', icon: '🧾', label: 'Monthly Bills' },
     { path: '/payments', icon: '💳', label: 'Payments' },
     { path: '/expenses', icon: '💰', label: 'Expenses' },
     { path: '/reports', icon: '📈', label: 'Reports' },
@@ -255,9 +229,6 @@ const Layout = () => {
             >
               <span className="nav-icon">{item.icon}</span>
               <span className="nav-label">{item.label}</span>
-              {item.path === '/expiry' && expiryUrgentCount > 0 && (
-                <span className="nav-badge">{expiryUrgentCount}</span>
-              )}
             </Link>
           ))}
         </nav>

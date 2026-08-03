@@ -146,10 +146,43 @@ const Customers = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Catch the exact mistake being described: accidentally marking the
+    // wrong customer Paid, or accidentally lowering/clearing their pending
+    // dues. Both feed into the "Collected" dashboard figure, so a misclick
+    // here quietly inflates it. One extra confirmation, only shown when one
+    // of these two things is actually about to happen, catches that before
+    // it's saved - on top of the Undo button in Change History afterward.
+    if (editingCustomer) {
+      const wasPaid = editingCustomer.paymentStatus === 'Paid' || editingCustomer.paymentStatus === '1 YEAR ADVANCED';
+      const willBePaid = formData.paymentStatus === 'Paid' || formData.paymentStatus === '1 YEAR ADVANCED';
+      const markingPaid = !wasPaid && willBePaid;
+
+      const oldDues = Number(editingCustomer.pendingDues || 0);
+      const newDues = Number(formData.pendingDues || 0);
+      const clearingDues = oldDues > 0 && newDues < oldDues;
+
+      if (markingPaid || clearingDues) {
+        const lines = [];
+        if (markingPaid) lines.push(`• Mark as Paid (adds PKR ${Number(formData.monthlyFee || 0).toLocaleString()} to Collected)`);
+        if (clearingDues) lines.push(`• Pending Dues: PKR ${oldDues.toLocaleString()} → PKR ${newDues.toLocaleString()}`);
+        const ok = window.confirm(
+          `Confirm changes for ${formData.name} (${formData.customerId}):\n\n${lines.join('\n')}\n\n` +
+          `Make sure this is the right customer. If this turns out to be a mistake, it can be undone afterward from 🕘 Change History.\n\n` +
+          `Save these changes?`
+        );
+        if (!ok) return;
+      }
+    }
+
     try {
       if (editingCustomer) {
-        await API.put(`/customers/${editingCustomer._id}`, formData);
-        toast.success('Customer updated successfully!');
+        const res = await API.put(`/customers/${editingCustomer._id}`, formData);
+        if (res.data.duesPayment) {
+          toast.success(`Customer updated - PKR ${res.data.duesPayment.amount.toLocaleString()} of dues cleared and added to Collected.`);
+        } else {
+          toast.success('Customer updated successfully!');
+        }
       } else {
         await API.post('/customers', formData);
         toast.success('Customer added successfully!');
@@ -190,6 +223,30 @@ const Customers = () => {
       console.error('Error:', error);
     } finally {
       setHistoryLoading(false);
+    }
+  };
+
+  // Puts every field a past edit changed back to what it was before that
+  // edit - the fix for "I accidentally cleared the wrong customer's dues /
+  // marked the wrong one Paid". Shows exactly what will be restored before
+  // doing anything, so it's not just as risky as the original mistake.
+  const undoChange = async (log) => {
+    const summary = (log.changes || [])
+      .map((c) => `${c.field}: "${c.to}" → "${c.from}"`)
+      .join('\n');
+    const ok = window.confirm(`Undo this change?\n\n${summary}\n\nThis will be applied right away.`);
+    if (!ok) return;
+    try {
+      await API.post(`/activity-logs/${log._id}/undo`);
+      toast.success('Change undone');
+      if (historyCustomer) {
+        const res = await API.get(`/customers/${historyCustomer._id}/history`);
+        setHistoryLogs(res.data.data || []);
+      }
+      loadCustomers(true);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to undo this change');
+      console.error('Error:', error);
     }
   };
 
@@ -655,6 +712,11 @@ const Customers = () => {
                       <span className="bulk-wa-row-detail">{log.details}</span>
                       <span className="day-cell">{new Date(log.createdAt).toLocaleString()}</span>
                     </div>
+                    {log.changes && log.changes.length > 0 && (
+                      <button type="button" className="action-btn" title="Undo this change" onClick={() => undoChange(log)}>
+                        ↩️ Undo
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -665,7 +727,6 @@ const Customers = () => {
           </div>
         </div>
       )}
-
     </div>
   );
 };

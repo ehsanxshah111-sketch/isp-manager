@@ -39,6 +39,25 @@ const ActivityLog = () => {
 
   const actionOptions = ['all', ...new Set(logs.map((l) => l.action))];
 
+  // Puts every field a past edit changed back to what it was before that
+  // edit. Shows exactly what will be restored first, so undoing a mistake
+  // can't itself become a second mistake.
+  const undoChange = async (log) => {
+    const summary = (log.changes || [])
+      .map((c) => `${c.field}: "${c.to}" → "${c.from}"`)
+      .join('\n');
+    const ok = window.confirm(`Undo this change?\n\n${summary}\n\nThis will be applied right away.`);
+    if (!ok) return;
+    try {
+      await API.post(`/activity-logs/${log._id}/undo`);
+      toast.success('Change undone');
+      loadLogs(true);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to undo this change');
+      console.error('Error:', error);
+    }
+  };
+
   const filteredLogs = logs.filter((l) => {
     const matchesSearch =
       !search ||
@@ -95,11 +114,12 @@ const ActivityLog = () => {
               <th>User</th>
               <th>Action</th>
               <th>Details</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filteredLogs.length === 0 ? (
-              <tr><td colSpan="4" className="no-data">No activity recorded yet</td></tr>
+              <tr><td colSpan="5" className="no-data">No activity recorded yet</td></tr>
             ) : (
               filteredLogs.map((log) => (
                 <tr key={log._id}>
@@ -111,6 +131,13 @@ const ActivityLog = () => {
                     </span>
                   </td>
                   <td>{log.details}</td>
+                  <td>
+                    {log.changes && log.changes.length > 0 && (
+                      <button type="button" className="action-btn" title="Undo this change" onClick={() => undoChange(log)}>
+                        ↩️ Undo
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))
             )}

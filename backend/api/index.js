@@ -4,7 +4,6 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
 
 dotenv.config();
 const app = express();
@@ -91,6 +90,28 @@ const ActivityLogSchema = new mongoose.Schema({
   ip: { type: String, default: '' }
 }, { timestamps: true });
 
+// One document per "Generate Bill" action - a locked-in snapshot of that
+// billing period's numbers (Total Recovery, Total Collected, etc.), plus
+// what the rollover did. Once created for a monthKey it is never edited, so
+// opening a past month always shows exactly what it showed the day it was
+// closed, no matter how today's live numbers have moved since.
+const MonthlyBillingSchema = new mongoose.Schema({
+  monthKey: { type: String, required: true, unique: true },  // e.g. "2026-08"
+  monthLabel: { type: String, required: true },               // e.g. "August 2026"
+  generatedBy: { type: String, default: 'Unknown' },
+  periodStart: { type: Date, required: true }, // previous generation's periodEnd (or account start)
+  periodEnd: { type: Date, required: true },   // the moment this bill was generated
+  totalCustomers: { type: Number, default: 0 },
+  activeCustomers: { type: Number, default: 0 },
+  paidCount: { type: Number, default: 0 },
+  unpaidCount: { type: Number, default: 0 },
+  totalRevenue: { type: Number, default: 0 },   // this cycle's billed fees (Active customers)
+  totalDues: { type: Number, default: 0 },       // pendingDues total at close, before rollover
+  totalRecovery: { type: Number, default: 0 },   // everything owed at close (dues + unpaid fee)
+  totalCollected: { type: Number, default: 0 },  // payments received during [periodStart, periodEnd]
+  rolledOverCount: { type: Number, default: 0 }  // customers whose unpaid fee moved into dues
+}, { timestamps: true });
+
 // Reuse existing models on hot-reload / repeated invocation instead of
 // throwing "Cannot overwrite model once compiled".
 const User = mongoose.models.User || mongoose.model('User', UserSchema);
@@ -99,6 +120,7 @@ const Payment = mongoose.models.Payment || mongoose.model('Payment', PaymentSche
 const Expense = mongoose.models.Expense || mongoose.model('Expense', ExpenseSchema);
 const AppSetting = mongoose.models.AppSetting || mongoose.model('AppSetting', AppSettingSchema);
 const ActivityLog = mongoose.models.ActivityLog || mongoose.model('ActivityLog', ActivityLogSchema);
+const MonthlyBilling = mongoose.models.MonthlyBilling || mongoose.model('MonthlyBilling', MonthlyBillingSchema);
 
 // =====================================================
 // DATABASE (cached connection so it survives warm
@@ -232,173 +254,6 @@ const startOfThisMonth = () => {
   return new Date(now.getFullYear(), now.getMonth(), 1);
 };
 
-// =====================================================
-// PACKAGE EXPIRY LOGIC
-// A customer's package renews every month on their billing day
-// (connectionDate, e.g. "15" = the 15th of every month). This works out
-// each customer's status relative to today:
-//   - overdue:  billing day already passed this month and they're still
-//               Unpaid  -> bucket 'overdue', daysUntilDue is negative
-//   - dueToday: billing day is today and they're still Unpaid
-//               -> bucket 'today', daysUntilDue is 0
-//   - upcoming: billing day is within the next 7 days
-//               -> bucket 'upcoming', daysUntilDue is 1-7
-//   - ok:       everything else (already paid, or due date is further away)
-// Only 'Active' customers are considered - a Cut Off/Disabled line has no
-// package actively running, so there's nothing to expire.
-const UPCOMING_WINDOW_DAYS = 7;
-
-const computeExpiryInfo = (customer, now = new Date()) => {
-  const dueDay = parseFloat(customer.connectionDate);
-  if (isNaN(dueDay) || dueDay < 1 || dueDay > 31) return null;
-  if (customer.status !== 'Active') return null;
-
-  const today = now.getDate();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const clampedDueDay = Math.min(dueDay, daysInMonth);
-  const isSettled = customer.paymentStatus === 'Paid'
-    || customer.paymentStatus === '1 YEAR ADVANCED'
-    || customer.paymentStatus === 'FREE';
-
-  let daysUntilDue = clampedDueDay - today;
-  let bucket = 'ok';
-
-  if (!isSettled) {
-    if (daysUntilDue < 0) bucket = 'overdue';
-    else if (daysUntilDue === 0) bucket = 'today';
-    else if (daysUntilDue <= UPCOMING_WINDOW_DAYS) bucket = 'upcoming';
-  }
-
-  return {
-    dueDay: clampedDueDay,
-    daysUntilDue,
-    bucket,
-    isSettled
-  };
-};
-
-// Builds the { overdue, today, upcoming, all } expiry list for every
-// Active customer. `all` includes every customer with expiry info
-// attached (used by the full Package Expiry table); the other three are
-// just filtered/sorted views of the same data (used for counts + emails).
-const buildExpiryReport = (customers, now = new Date()) => {
-  const all = customers
-    .map((c) => {
-      const info = computeExpiryInfo(c, now);
-      return info ? { customer: c, ...info } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
-
-  const overdue = all.filter((e) => e.bucket === 'overdue');
-  const today = all.filter((e) => e.bucket === 'today');
-  const upcoming = all.filter((e) => e.bucket === 'upcoming');
-
-  return { all, overdue, today, upcoming };
-};
-
-// Lazily-created Gmail transporter. Requires EMAIL_USER + EMAIL_PASS (a
-// Gmail App Password, not the normal account password) to be set as env
-// vars - if they're missing we skip sending instead of crashing the
-// request, and callers get a clear message explaining why.
-let mailTransporter = null;
-const getMailTransporter = () => {
-  if (mailTransporter) return mailTransporter;
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) return null;
-  mailTransporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
-    }
-  });
-  return mailTransporter;
-};
-
-const NOTIFY_EMAIL_TO = process.env.NOTIFY_EMAIL_TO || 'mrshah147369@gmail.com';
-
-const expiryRowHtml = (e, color) => `
-  <tr>
-    <td style="padding:8px;border-bottom:1px solid #eee;">${e.customer.name}</td>
-    <td style="padding:8px;border-bottom:1px solid #eee;">${e.customer.customerId}</td>
-    <td style="padding:8px;border-bottom:1px solid #eee;">${e.customer.phone || '-'}</td>
-    <td style="padding:8px;border-bottom:1px solid #eee;">PKR ${(e.customer.monthlyFee || 0).toLocaleString()}</td>
-    <td style="padding:8px;border-bottom:1px solid #eee;color:${color};font-weight:bold;">
-      ${e.bucket === 'overdue' ? `Expired ${Math.abs(e.daysUntilDue)} day${Math.abs(e.daysUntilDue) === 1 ? '' : 's'} ago` : e.bucket === 'today' ? 'Expires today' : `Expires in ${e.daysUntilDue} day${e.daysUntilDue === 1 ? '' : 's'}`}
-    </td>
-  </tr>`;
-
-const buildExpiryEmailHtml = (report) => {
-  const section = (title, list, color) => {
-    if (list.length === 0) return '';
-    return `
-      <h3 style="color:${color};margin:20px 0 8px;">${title} (${list.length})</h3>
-      <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
-        <thead>
-          <tr style="background:#f5f5f5;text-align:left;">
-            <th style="padding:8px;">Name</th>
-            <th style="padding:8px;">Customer ID</th>
-            <th style="padding:8px;">Phone</th>
-            <th style="padding:8px;">Monthly Fee</th>
-            <th style="padding:8px;">Status</th>
-          </tr>
-        </thead>
-        <tbody>${list.map((e) => expiryRowHtml(e, color)).join('')}</tbody>
-      </table>`;
-  };
-
-  const bodyParts = [
-    section('⛔ Overdue / Expired', report.overdue, '#dc3545'),
-    section('⚠️ Expiring Today', report.today, '#fd7e14'),
-    section('🔔 Expiring Soon (next 7 days)', report.upcoming, '#0d6efd')
-  ].filter(Boolean).join('');
-
-  if (!bodyParts) return null;
-
-  return `
-    <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;">
-      <h2 style="color:#111;">📡 Customer Package Expiry Report</h2>
-      <p style="color:#555;">Here's today's summary of customer packages needing attention.</p>
-      ${bodyParts}
-      <p style="color:#999;font-size:12px;margin-top:24px;">Sent automatically by your ISP Manager dashboard.</p>
-    </div>`;
-};
-
-// Shared by both the manual "Send Now" button and the daily cron job, so
-// the two never drift apart. Returns { sent, skippedReason, counts }.
-const sendExpiryEmail = async (report) => {
-  const html = buildExpiryEmailHtml(report);
-  if (!html) {
-    return { sent: false, skippedReason: 'No customers are overdue, due today, or expiring within 7 days - nothing to send.' };
-  }
-
-  const transporter = getMailTransporter();
-  if (!transporter) {
-    return { sent: false, skippedReason: 'Email is not configured yet - set EMAIL_USER and EMAIL_PASS (a Gmail App Password) as environment variables.' };
-  }
-
-  const subjectParts = [];
-  if (report.overdue.length) subjectParts.push(`${report.overdue.length} overdue`);
-  if (report.today.length) subjectParts.push(`${report.today.length} due today`);
-  if (report.upcoming.length) subjectParts.push(`${report.upcoming.length} upcoming`);
-
-  await transporter.sendMail({
-    from: `"ISP Manager" <${process.env.EMAIL_USER}>`,
-    to: NOTIFY_EMAIL_TO,
-    subject: `📡 Package Expiry Report - ${subjectParts.join(', ')}`,
-    html
-  });
-
-  return {
-    sent: true,
-    counts: {
-      overdue: report.overdue.length,
-      today: report.today.length,
-      upcoming: report.upcoming.length
-    }
-  };
-};
-// =====================================================
 // HEALTH
 // =====================================================
 app.get('/api/health', (req, res) => {
@@ -834,60 +689,47 @@ app.get('/api/customers/:id/history', auth, async (req, res) => {
   }
 });
 
-// =====================================================
-// PACKAGE EXPIRY ROUTES
-// =====================================================
-
-// @desc  Full expiry list for the "Package Expiry" page - every Active
-//        customer with their computed due-date bucket, soonest first.
-app.get('/api/customers/expiry', auth, async (req, res) => {
+// @desc  Undo a single "Customer Updated" log entry - puts every field it
+//        changed back to its recorded "from" value. This is the safety net
+//        for accidental edits (e.g. clearing someone's pending dues, or
+//        marking the wrong customer Paid): find the entry in the history,
+//        undo it, done - no need to remember and retype the old numbers.
+//        A fresh "Customer Updated" entry is logged for the undo itself, so
+//        the audit trail always shows the truth of what actually happened.
+app.post('/api/activity-logs/:id/undo', auth, async (req, res) => {
   try {
-    const customers = await Customer.find({ status: 'Active' });
-    const report = buildExpiryReport(customers);
-    res.json({
-      success: true,
-      data: {
-        all: report.all,
-        counts: {
-          overdue: report.overdue.length,
-          today: report.today.length,
-          upcoming: report.upcoming.length
-        }
-      }
+    const log = await ActivityLog.findById(req.params.id);
+    if (!log) return res.status(404).json({ success: false, message: 'Log entry not found' });
+    if (log.action !== 'Customer Updated' || !log.changes || log.changes.length === 0) {
+      return res.status(400).json({ success: false, message: 'This entry has nothing that can be undone' });
+    }
+
+    const customer = await Customer.findById(log.entityId);
+    if (!customer) {
+      return res.status(404).json({ success: false, message: 'That customer no longer exists - cannot undo' });
+    }
+
+    // Rebuild the pre-change values from the log's own "from" side.
+    const revertBody = {};
+    log.changes.forEach((c) => {
+      revertBody[c.field] = c.from;
     });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
 
-// @desc  Lightweight counts-only version, polled by the sidebar badge so
-//        it doesn't have to pull every customer just to show a number.
-app.get('/api/customers/expiry-summary', auth, async (req, res) => {
-  try {
-    const customers = await Customer.find({ status: 'Active' });
-    const report = buildExpiryReport(customers);
-    res.json({
-      success: true,
-      data: {
-        overdue: report.overdue.length,
-        today: report.today.length,
-        upcoming: report.upcoming.length
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+    const changes = diffCustomerFields(customer, revertBody);
+    const updated = await Customer.findByIdAndUpdate(log.entityId, revertBody, { new: true });
 
-// @desc  Manually trigger the expiry email right now (the "Send Email Now"
-//        button on the Package Expiry page). Same email the daily cron
-//        job sends automatically.
-app.post('/api/customers/expiry/notify', auth, async (req, res) => {
-  try {
-    const customers = await Customer.find({ status: 'Active' });
-    const report = buildExpiryReport(customers);
-    const result = await sendExpiryEmail(report);
-    res.json({ success: true, data: result });
+    if (changes.length > 0) {
+      await logActivity({
+        req,
+        action: 'Customer Updated',
+        entityType: 'Customer',
+        entityId: updated._id,
+        changes,
+        details: `Undid a previous change for ${updated.name} (${updated.customerId}): ${formatChanges(changes)}`
+      });
+    }
+
+    res.json({ success: true, data: updated });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -1059,6 +901,172 @@ app.delete('/api/expenses/:id', auth, async (req, res) => {
     const expense = await Expense.findByIdAndDelete(req.params.id);
     if (!expense) return res.status(404).json({ success: false, message: 'Expense not found' });
     res.json({ success: true, message: 'Expense deleted' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// =====================================================
+// MONTHLY BILLING ROUTES
+// "Generate Bill" closes out the current billing period: it locks in that
+// period's Total Recovery / Total Collected numbers forever (so looking
+// back at "August" always shows what August actually looked like, even
+// after September's numbers move on), then rolls every still-Unpaid
+// Active customer's monthly fee into their pending dues and resets them
+// to Unpaid for the new period. Cut Off/Disabled customers and customers
+// on '1 YEAR ADVANCED'/'FREE' are left untouched, same as everywhere else
+// in the app.
+// =====================================================
+
+// Shared by both the live preview and the real generate action, so the
+// numbers a user sees in the preview are exactly what generating would
+// lock in.
+const computeBillingSnapshot = async (periodStart, periodEnd) => {
+  const customers = await Customer.find();
+  const totalCustomers = customers.length;
+  const activeCustomers = customers.filter((c) => c.status === 'Active').length;
+  const paidCount = customers.filter((c) => c.paymentStatus === 'Paid' || c.paymentStatus === '1 YEAR ADVANCED').length;
+  const unpaidCount = customers.filter((c) => c.paymentStatus === 'Unpaid').length;
+
+  const totalRevenue = customers
+    .filter((c) => c.status === 'Active')
+    .reduce((sum, c) => sum + (c.monthlyFee || 0), 0);
+  const totalDues = customers.reduce((sum, c) => sum + (c.pendingDues || 0), 0);
+
+  const amountOwed = (c) =>
+    (c.pendingDues || 0) + (c.status === 'Active' && c.paymentStatus === 'Unpaid' ? (c.monthlyFee || 0) : 0);
+  const totalRecovery = customers.reduce((sum, c) => sum + amountOwed(c), 0);
+
+  const rolledOverCount = customers.filter((c) => c.status === 'Active' && c.paymentStatus === 'Unpaid').length;
+
+  const collectedAgg = await Payment.aggregate([
+    { $match: { date: { $gte: periodStart, $lte: periodEnd } } },
+    { $group: { _id: null, total: { $sum: '$amount' } } }
+  ]);
+  const totalCollected = collectedAgg[0]?.total || 0;
+
+  return {
+    totalCustomers, activeCustomers, paidCount, unpaidCount,
+    totalRevenue, totalDues, totalRecovery, totalCollected, rolledOverCount
+  };
+};
+
+// @desc  Every past generated month, most recent first - the list used to
+//        jump back to any previous month's locked-in numbers.
+app.get('/api/billing', auth, async (req, res) => {
+  try {
+    const bills = await MonthlyBilling.find().sort({ periodEnd: -1 });
+    res.json({ success: true, data: bills });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @desc  One past month's locked-in snapshot, by its monthKey (e.g. "2026-08").
+app.get('/api/billing/:monthKey', auth, async (req, res) => {
+  try {
+    const bill = await MonthlyBilling.findOne({ monthKey: req.params.monthKey });
+    if (!bill) return res.status(404).json({ success: false, message: 'No bill generated for that month yet' });
+    res.json({ success: true, data: bill });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @desc  Live numbers for the CURRENT, not-yet-generated period - what
+//        generating right now would lock in. Also tells the frontend
+//        whether a suggested monthKey has already been billed.
+app.get('/api/billing-preview/now', auth, async (req, res) => {
+  try {
+    const lastBill = await MonthlyBilling.findOne().sort({ periodEnd: -1 });
+    const periodStart = lastBill ? lastBill.periodEnd : new Date(0);
+    const periodEnd = new Date();
+    const snapshot = await computeBillingSnapshot(periodStart, periodEnd);
+    res.json({
+      success: true,
+      data: {
+        ...snapshot,
+        periodStart,
+        periodEnd,
+        lastGeneratedMonth: lastBill ? { monthKey: lastBill.monthKey, monthLabel: lastBill.monthLabel } : null
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @desc  Generate (close out) a billing month. Locks in the current
+//        numbers under monthKey forever, then rolls unpaid fees into dues
+//        and resets Active/Unpaid customers for the new period. Blocked if
+//        that monthKey was already generated, so the same month can never
+//        be double-billed.
+app.post('/api/billing/generate', auth, async (req, res) => {
+  try {
+    const { monthKey, monthLabel } = req.body;
+    if (!monthKey || !monthLabel) {
+      return res.status(400).json({ success: false, message: 'monthKey and monthLabel are required' });
+    }
+
+    const already = await MonthlyBilling.findOne({ monthKey });
+    if (already) {
+      return res.status(400).json({ success: false, message: `${monthLabel} has already been generated` });
+    }
+
+    const lastBill = await MonthlyBilling.findOne().sort({ periodEnd: -1 });
+    const periodStart = lastBill ? lastBill.periodEnd : new Date(0);
+    const periodEnd = new Date();
+
+    const snapshot = await computeBillingSnapshot(periodStart, periodEnd);
+
+    // Roll the fee forward for anyone Active and still Unpaid, and start a
+    // fresh cycle for everyone else Active (so a Paid customer isn't left
+    // marked Paid forever). 1 YEAR ADVANCED / FREE / non-Active customers
+    // are left exactly as they are.
+    const activeCustomers = await Customer.find({ status: 'Active' });
+    const bulkOps = activeCustomers
+      .filter((c) => c.paymentStatus === 'Unpaid' || c.paymentStatus === 'Paid')
+      .map((c) => {
+        if (c.paymentStatus === 'Unpaid') {
+          return {
+            updateOne: {
+              filter: { _id: c._id },
+              update: { $inc: { pendingDues: c.monthlyFee || 0 }, $set: { paymentStatus: 'Unpaid' } }
+            }
+          };
+        }
+        // was Paid -> new cycle begins, nothing owed rolls over
+        return {
+          updateOne: {
+            filter: { _id: c._id },
+            update: { $set: { paymentStatus: 'Unpaid' } }
+          }
+        };
+      });
+    if (bulkOps.length > 0) {
+      await Customer.bulkWrite(bulkOps);
+    }
+
+    const bill = await MonthlyBilling.create({
+      monthKey,
+      monthLabel,
+      generatedBy: req.username || 'Unknown',
+      periodStart,
+      periodEnd,
+      ...snapshot
+    });
+
+    await logActivity({
+      req,
+      action: 'Monthly Bill Generated',
+      module: 'System',
+      entityType: 'MonthlyBilling',
+      entityId: bill._id,
+      details: `Generated bill for ${monthLabel}: Total Recovery PKR ${snapshot.totalRecovery.toLocaleString()}, ` +
+        `Total Collected PKR ${snapshot.totalCollected.toLocaleString()}, ${snapshot.rolledOverCount} customer(s) rolled into next cycle's dues`
+    });
+
+    res.status(201).json({ success: true, data: bill });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -1279,30 +1287,6 @@ app.post('/api/whatsapp/bulk', auth, async (req, res) => {
 
 // Local dev support: `node api/index.js` will still boot a server,
 // while Vercel just imports `app` as a serverless function.
-// =====================================================
-// DAILY CRON - runs automatically once a day (see vercel.json "crons").
-// Vercel signs its own cron requests with the CRON_SECRET env var as a
-// Bearer token, so this checks that instead of a normal user login -
-// nobody else can trigger it without that secret.
-// =====================================================
-app.get('/api/cron/check-expiry', async (req, res) => {
-  try {
-    if (process.env.CRON_SECRET) {
-      const token = req.header('Authorization')?.replace('Bearer ', '');
-      if (token !== process.env.CRON_SECRET) {
-        return res.status(401).json({ success: false, message: 'Unauthorized' });
-      }
-    }
-
-    const customers = await Customer.find({ status: 'Active' });
-    const report = buildExpiryReport(customers);
-    const result = await sendExpiryEmail(report);
-    res.json({ success: true, data: result });
-  } catch (error) {
-    console.error('Cron expiry check error:', error.message);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
 
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
