@@ -4,7 +4,6 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
 
 dotenv.config();
 const app = express();
@@ -230,173 +229,6 @@ const buildReminderMessage = (c) => {
 const startOfThisMonth = () => {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1);
-};
-
-// =====================================================
-// PACKAGE EXPIRY LOGIC
-// A customer's package renews every month on their billing day
-// (connectionDate, e.g. "15" = the 15th of every month). This works out
-// each customer's status relative to today:
-//   - overdue:  billing day already passed this month and they're still
-//               Unpaid  -> bucket 'overdue', daysUntilDue is negative
-//   - dueToday: billing day is today and they're still Unpaid
-//               -> bucket 'today', daysUntilDue is 0
-//   - upcoming: billing day is within the next 7 days
-//               -> bucket 'upcoming', daysUntilDue is 1-7
-//   - ok:       everything else (already paid, or due date is further away)
-// Only 'Active' customers are considered - a Cut Off/Disabled line has no
-// package actively running, so there's nothing to expire.
-const UPCOMING_WINDOW_DAYS = 7;
-
-const computeExpiryInfo = (customer, now = new Date()) => {
-  const dueDay = parseFloat(customer.connectionDate);
-  if (isNaN(dueDay) || dueDay < 1 || dueDay > 31) return null;
-  if (customer.status !== 'Active') return null;
-
-  const today = now.getDate();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const clampedDueDay = Math.min(dueDay, daysInMonth);
-  const isSettled = customer.paymentStatus === 'Paid'
-    || customer.paymentStatus === '1 YEAR ADVANCED'
-    || customer.paymentStatus === 'FREE';
-
-  let daysUntilDue = clampedDueDay - today;
-  let bucket = 'ok';
-
-  if (!isSettled) {
-    if (daysUntilDue < 0) bucket = 'overdue';
-    else if (daysUntilDue === 0) bucket = 'today';
-    else if (daysUntilDue <= UPCOMING_WINDOW_DAYS) bucket = 'upcoming';
-  }
-
-  return {
-    dueDay: clampedDueDay,
-    daysUntilDue,
-    bucket,
-    isSettled
-  };
-};
-
-// Builds the { overdue, today, upcoming, all } expiry list for every
-// Active customer. `all` includes every customer with expiry info
-// attached (used by the full Package Expiry table); the other three are
-// just filtered/sorted views of the same data (used for counts + emails).
-const buildExpiryReport = (customers, now = new Date()) => {
-  const all = customers
-    .map((c) => {
-      const info = computeExpiryInfo(c, now);
-      return info ? { customer: c, ...info } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
-
-  const overdue = all.filter((e) => e.bucket === 'overdue');
-  const today = all.filter((e) => e.bucket === 'today');
-  const upcoming = all.filter((e) => e.bucket === 'upcoming');
-
-  return { all, overdue, today, upcoming };
-};
-
-// Lazily-created Gmail transporter. Requires EMAIL_USER + EMAIL_PASS (a
-// Gmail App Password, not the normal account password) to be set as env
-// vars - if they're missing we skip sending instead of crashing the
-// request, and callers get a clear message explaining why.
-let mailTransporter = null;
-const getMailTransporter = () => {
-  if (mailTransporter) return mailTransporter;
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) return null;
-  mailTransporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
-    }
-  });
-  return mailTransporter;
-};
-
-const NOTIFY_EMAIL_TO = process.env.NOTIFY_EMAIL_TO || 'shahm2254@gmail.com';
-
-const expiryRowHtml = (e, color) => `
-  <tr>
-    <td style="padding:8px;border-bottom:1px solid #eee;">${e.customer.name}</td>
-    <td style="padding:8px;border-bottom:1px solid #eee;">${e.customer.customerId}</td>
-    <td style="padding:8px;border-bottom:1px solid #eee;">${e.customer.phone || '-'}</td>
-    <td style="padding:8px;border-bottom:1px solid #eee;">PKR ${(e.customer.monthlyFee || 0).toLocaleString()}</td>
-    <td style="padding:8px;border-bottom:1px solid #eee;color:${color};font-weight:bold;">
-      ${e.bucket === 'overdue' ? `Expired ${Math.abs(e.daysUntilDue)} day${Math.abs(e.daysUntilDue) === 1 ? '' : 's'} ago` : e.bucket === 'today' ? 'Expires today' : `Expires in ${e.daysUntilDue} day${e.daysUntilDue === 1 ? '' : 's'}`}
-    </td>
-  </tr>`;
-
-const buildExpiryEmailHtml = (report) => {
-  const section = (title, list, color) => {
-    if (list.length === 0) return '';
-    return `
-      <h3 style="color:${color};margin:20px 0 8px;">${title} (${list.length})</h3>
-      <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;">
-        <thead>
-          <tr style="background:#f5f5f5;text-align:left;">
-            <th style="padding:8px;">Name</th>
-            <th style="padding:8px;">Customer ID</th>
-            <th style="padding:8px;">Phone</th>
-            <th style="padding:8px;">Monthly Fee</th>
-            <th style="padding:8px;">Status</th>
-          </tr>
-        </thead>
-        <tbody>${list.map((e) => expiryRowHtml(e, color)).join('')}</tbody>
-      </table>`;
-  };
-
-  const bodyParts = [
-    section('⛔ Overdue / Expired', report.overdue, '#dc3545'),
-    section('⚠️ Expiring Today', report.today, '#fd7e14'),
-    section('🔔 Expiring Soon (next 7 days)', report.upcoming, '#0d6efd')
-  ].filter(Boolean).join('');
-
-  if (!bodyParts) return null;
-
-  return `
-    <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;">
-      <h2 style="color:#111;">📡 Customer Package Expiry Report</h2>
-      <p style="color:#555;">Here's today's summary of customer packages needing attention.</p>
-      ${bodyParts}
-      <p style="color:#999;font-size:12px;margin-top:24px;">Sent automatically by your ISP Manager dashboard.</p>
-    </div>`;
-};
-
-// Shared by both the manual "Send Now" button and the daily cron job, so
-// the two never drift apart. Returns { sent, skippedReason, counts }.
-const sendExpiryEmail = async (report) => {
-  const html = buildExpiryEmailHtml(report);
-  if (!html) {
-    return { sent: false, skippedReason: 'No customers are overdue, due today, or expiring within 7 days - nothing to send.' };
-  }
-
-  const transporter = getMailTransporter();
-  if (!transporter) {
-    return { sent: false, skippedReason: 'Email is not configured yet - set EMAIL_USER and EMAIL_PASS (a Gmail App Password) as environment variables.' };
-  }
-
-  const subjectParts = [];
-  if (report.overdue.length) subjectParts.push(`${report.overdue.length} overdue`);
-  if (report.today.length) subjectParts.push(`${report.today.length} due today`);
-  if (report.upcoming.length) subjectParts.push(`${report.upcoming.length} upcoming`);
-
-  await transporter.sendMail({
-    from: `"ISP Manager" <${process.env.EMAIL_USER}>`,
-    to: NOTIFY_EMAIL_TO,
-    subject: `📡 Package Expiry Report - ${subjectParts.join(', ')}`,
-    html
-  });
-
-  return {
-    sent: true,
-    counts: {
-      overdue: report.overdue.length,
-      today: report.today.length,
-      upcoming: report.upcoming.length
-    }
-  };
 };
 
 // =====================================================
@@ -626,6 +458,21 @@ app.put('/api/customers/:id', auth, async (req, res) => {
     // the audit trail can show old value -> new value for every field.
     const changes = diffCustomerFields(existing, req.body);
 
+    // If pendingDues is being LOWERED, that difference is money the customer
+    // just paid off - it should count as collected revenue, not just vanish
+    // from the dues total. We record it as a real Payment (so it shows up in
+    // "Total Collected" / dashboard collections) for exactly the amount
+    // cleared - never for an increase in dues, and never more than what was
+    // actually reduced.
+    const oldPendingDues = existing.pendingDues || 0;
+    let duesClearedAmount = 0;
+    if ('pendingDues' in req.body) {
+      const newPendingDues = parseFloat(req.body.pendingDues) || 0;
+      if (newPendingDues < oldPendingDues) {
+        duesClearedAmount = oldPendingDues - newPendingDues;
+      }
+    }
+
     const customer = await Customer.findByIdAndUpdate(req.params.id, req.body, { new: true });
 
     if (changes.length > 0) {
@@ -639,7 +486,29 @@ app.put('/api/customers/:id', auth, async (req, res) => {
       });
     }
 
-    res.json({ success: true, data: customer });
+    let duesPayment = null;
+    if (duesClearedAmount > 0) {
+      const receiptNumber = `RCPT-DUES-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      duesPayment = await Payment.create({
+        receiptNumber,
+        customerId: customer.customerId,
+        customerName: customer.name,
+        amount: duesClearedAmount,
+        billingMonth: 'Pending Dues Cleared',
+        method: req.body.duesPaymentMethod || 'Cash',
+        notes: `Auto-recorded: pending dues reduced from PKR ${oldPendingDues} to PKR ${customer.pendingDues || 0}`
+      });
+
+      await logActivity({
+        req,
+        action: 'Pending Dues Cleared',
+        entityType: 'Customer',
+        entityId: customer._id,
+        details: `PKR ${duesClearedAmount} of pending dues cleared for ${customer.name} (${customer.customerId}) - added to collected amount, removed from pending dues`
+      });
+    }
+
+    res.json({ success: true, data: customer, duesPayment });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -813,65 +682,6 @@ app.get('/api/activity-logs', auth, async (req, res) => {
     const capped = Math.min(parseInt(limit) || 300, 1000);
     const logs = await ActivityLog.find(query).sort({ createdAt: -1 }).limit(capped);
     res.json({ success: true, data: logs });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// =====================================================
-// PACKAGE EXPIRY ROUTES
-// =====================================================
-
-// @desc  Full expiry list for the "Package Expiry" page - every Active
-//        customer with their computed due-date bucket, soonest first.
-app.get('/api/customers/expiry', auth, async (req, res) => {
-  try {
-    const customers = await Customer.find({ status: 'Active' });
-    const report = buildExpiryReport(customers);
-    res.json({
-      success: true,
-      data: {
-        all: report.all,
-        counts: {
-          overdue: report.overdue.length,
-          today: report.today.length,
-          upcoming: report.upcoming.length
-        }
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// @desc  Lightweight counts-only version, polled by the sidebar badge so
-//        it doesn't have to pull every customer just to show a number.
-app.get('/api/customers/expiry-summary', auth, async (req, res) => {
-  try {
-    const customers = await Customer.find({ status: 'Active' });
-    const report = buildExpiryReport(customers);
-    res.json({
-      success: true,
-      data: {
-        overdue: report.overdue.length,
-        today: report.today.length,
-        upcoming: report.upcoming.length
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// @desc  Manually trigger the expiry email right now (the "Send Email Now"
-//        button on the Package Expiry page). Same email the daily cron
-//        job sends automatically.
-app.post('/api/customers/expiry/notify', auth, async (req, res) => {
-  try {
-    const customers = await Customer.find({ status: 'Active' });
-    const report = buildExpiryReport(customers);
-    const result = await sendExpiryEmail(report);
-    res.json({ success: true, data: result });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -1227,31 +1037,6 @@ app.post('/api/whatsapp/bulk', auth, async (req, res) => {
 
     res.json({ success: true, data: links });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// =====================================================
-// DAILY CRON - runs automatically once a day (see vercel.json "crons").
-// Vercel signs its own cron requests with the CRON_SECRET env var as a
-// Bearer token, so this checks that instead of a normal user login -
-// nobody else can trigger it without that secret.
-// =====================================================
-app.get('/api/cron/check-expiry', async (req, res) => {
-  try {
-    if (process.env.CRON_SECRET) {
-      const token = req.header('Authorization')?.replace('Bearer ', '');
-      if (token !== process.env.CRON_SECRET) {
-        return res.status(401).json({ success: false, message: 'Unauthorized' });
-      }
-    }
-
-    const customers = await Customer.find({ status: 'Active' });
-    const report = buildExpiryReport(customers);
-    const result = await sendExpiryEmail(report);
-    res.json({ success: true, data: result });
-  } catch (error) {
-    console.error('Cron expiry check error:', error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 });

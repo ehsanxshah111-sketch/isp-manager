@@ -1,5 +1,6 @@
 const Customer = require('../models/Customer');
 const ActivityLog = require('../models/ActivityLog');
+const Payment = require('../models/Payment');
 
 // @desc    Get all customers sorted by day number (1 to 31)
 // @route   GET /api/customers
@@ -133,6 +134,20 @@ exports.updateCustomer = async (req, res) => {
       }
     }
 
+    // If pendingDues is being LOWERED, that difference is money the customer
+    // just paid off - record it as a real Payment so it counts toward
+    // collected revenue, instead of just disappearing from the dues total.
+    // Never triggers when dues go UP, and only ever for the amount actually
+    // cleared.
+    const oldPendingDues = customer.pendingDues || 0;
+    let duesClearedAmount = 0;
+    if ('pendingDues' in req.body) {
+      const newPendingDues = parseFloat(req.body.pendingDues) || 0;
+      if (newPendingDues < oldPendingDues) {
+        duesClearedAmount = oldPendingDues - newPendingDues;
+      }
+    }
+
     const updatedCustomer = await Customer.findByIdAndUpdate(
       req.params.id,
       { ...req.body, updatedAt: Date.now() },
@@ -146,10 +161,32 @@ exports.updateCustomer = async (req, res) => {
       module: 'Customers'
     });
 
+    let duesPayment = null;
+    if (duesClearedAmount > 0) {
+      const receiptNumber = `RCPT-DUES-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      duesPayment = await Payment.create({
+        receiptNumber,
+        customerId: updatedCustomer.customerId,
+        customerName: updatedCustomer.name,
+        amount: duesClearedAmount,
+        billingMonth: 'Pending Dues Cleared',
+        method: req.body.duesPaymentMethod || 'Cash',
+        notes: `Auto-recorded: pending dues reduced from PKR ${oldPendingDues} to PKR ${updatedCustomer.pendingDues || 0}`
+      });
+
+      await ActivityLog.create({
+        user: req.userId,
+        action: 'Pending Dues Cleared',
+        details: `PKR ${duesClearedAmount} of pending dues cleared for ${updatedCustomer.name} (${updatedCustomer.customerId}) - added to collected amount, removed from pending dues`,
+        module: 'Customers'
+      });
+    }
+
     res.json({
       success: true,
       message: 'Customer updated successfully',
-      data: updatedCustomer
+      data: updatedCustomer,
+      duesPayment
     });
   } catch (error) {
     console.error('Update customer error:', error);
