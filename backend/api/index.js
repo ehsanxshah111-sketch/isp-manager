@@ -885,9 +885,19 @@ app.get('/api/dashboard', auth, async (req, res) => {
     const cutOffDues = customers
       .filter(c => c.status !== 'Active')
       .reduce((sum, c) => sum + amountOwed(c), 0);
+    // Cleared pending dues are real cash collected too, not just a Paid
+    // customer's monthly fee - so on top of the Paid/1 YEAR ADVANCED fee
+    // total below, add every Payment that was auto-recorded when someone's
+    // pendingDues got reduced (see PUT /api/customers/:id above).
+    const duesClearedAgg = await Payment.aggregate([
+      { $match: { billingMonth: 'Pending Dues Cleared' } },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+    const duesClearedTotal = duesClearedAgg[0]?.total || 0;
+
     const collected = customers
       .filter(c => c.paymentStatus === 'Paid' || c.paymentStatus === '1 YEAR ADVANCED')
-      .reduce((sum, c) => sum + (c.monthlyFee || 0), 0);
+      .reduce((sum, c) => sum + (c.monthlyFee || 0), 0) + duesClearedTotal;
     const pendingCollection = customers
       .filter(c => c.paymentStatus === 'Unpaid')
       .reduce((sum, c) => sum + (c.monthlyFee || 0), 0);

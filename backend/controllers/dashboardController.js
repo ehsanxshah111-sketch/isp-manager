@@ -22,9 +22,15 @@ exports.getDashboardStats = async (req, res) => {
     // ===== REVENUE STATS =====
     const totalRevenue = customers.reduce((sum, c) => sum + c.monthlyFee, 0);
     const totalDues = customers.reduce((sum, c) => sum + (c.pendingDues || 0), 0);
+    // Cleared pending dues are real cash collected too - add every payment
+    // that was auto-recorded when someone's pendingDues got reduced (see
+    // customerController.updateCustomer) on top of the Paid customers' fees.
+    const duesClearedTotal = payments
+      .filter(p => p.billingMonth === 'Pending Dues Cleared')
+      .reduce((sum, p) => sum + p.amount, 0);
     const collected = customers
       .filter(c => c.paymentStatus === 'Paid' || c.paymentStatus === '1 YEAR ADVANCED')
-      .reduce((sum, c) => sum + c.monthlyFee, 0);
+      .reduce((sum, c) => sum + c.monthlyFee, 0) + duesClearedTotal;
     const pendingCollection = customers
       .filter(c => c.paymentStatus === 'Unpaid')
       .reduce((sum, c) => sum + c.monthlyFee, 0);
