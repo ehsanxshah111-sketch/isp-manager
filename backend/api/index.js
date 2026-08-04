@@ -86,6 +86,11 @@ const ActivityLogSchema = new mongoose.Schema({
     from: mongoose.Schema.Types.Mixed,
     to: mongoose.Schema.Types.Mixed
   }],
+  // If this "Customer Updated" entry auto-created a "Pending Dues Cleared"
+  // Payment (because pendingDues was lowered), this points at that Payment.
+  // Undo uses it to delete the payment too, so an accidental dues edit
+  // doesn't leave stray money sitting in "collected" after the undo.
+  linkedPaymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: null },
   details: { type: String, default: '' },            // human-readable one-line summary
   ip: { type: String, default: '' }
 }, { timestamps: true });
@@ -182,7 +187,7 @@ const auth = async (req, res, next) => {
 
 // Records one audit-trail entry. Never throws into the caller - a logging
 // hiccup should never block the actual customer change from saving.
-const logActivity = async ({ req, action, module = 'Customers', entityType = '', entityId = null, changes = [], details = '' }) => {
+const logActivity = async ({ req, action, module = 'Customers', entityType = '', entityId = null, changes = [], details = '', linkedPaymentId = null }) => {
   try {
     await ActivityLog.create({
       user: req.username || 'Unknown',
@@ -193,6 +198,7 @@ const logActivity = async ({ req, action, module = 'Customers', entityType = '',
       entityId,
       changes,
       details,
+      linkedPaymentId,
       ip: req.headers['x-forwarded-for'] || req.socket?.remoteAddress || ''
     });
   } catch (e) {
@@ -497,17 +503,9 @@ app.put('/api/customers/:id', auth, async (req, res) => {
 
     const customer = await Customer.findByIdAndUpdate(req.params.id, req.body, { new: true });
 
-    if (changes.length > 0) {
-      await logActivity({
-        req,
-        action: 'Customer Updated',
-        entityType: 'Customer',
-        entityId: customer._id,
-        changes,
-        details: `Updated ${customer.name} (${customer.customerId}): ${formatChanges(changes)}`
-      });
-    }
-
+    // Create the auto-payment BEFORE logging "Customer Updated" so that log
+    // entry can point at it. That link is what lets Undo clean up the
+    // payment too, instead of leaving it stuck in "collected" forever.
     let duesPayment = null;
     if (duesClearedAmount > 0) {
       const receiptNumber = `RCPT-DUES-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -520,7 +518,21 @@ app.put('/api/customers/:id', auth, async (req, res) => {
         method: req.body.duesPaymentMethod || 'Cash',
         notes: `Auto-recorded: pending dues reduced from PKR ${oldPendingDues} to PKR ${customer.pendingDues || 0}`
       });
+    }
 
+    if (changes.length > 0) {
+      await logActivity({
+        req,
+        action: 'Customer Updated',
+        entityType: 'Customer',
+        entityId: customer._id,
+        changes,
+        details: `Updated ${customer.name} (${customer.customerId}): ${formatChanges(changes)}`,
+        linkedPaymentId: duesPayment ? duesPayment._id : null
+      });
+    }
+
+    if (duesPayment) {
       await logActivity({
         req,
         action: 'Pending Dues Cleared',
@@ -718,6 +730,17 @@ app.post('/api/activity-logs/:id/undo', auth, async (req, res) => {
     const changes = diffCustomerFields(customer, revertBody);
     const updated = await Customer.findByIdAndUpdate(log.entityId, revertBody, { new: true });
 
+    // If this update had auto-recorded a "Pending Dues Cleared" payment
+    // (pendingDues got lowered, on purpose or by mistake), undoing the
+    // pendingDues field back is not enough on its own - that payment is
+    // still sitting in the Payments collection and still counted in
+    // "Total Collected" on the dashboard. Remove it too so the undo is
+    // actually complete.
+    let removedPayment = null;
+    if (log.linkedPaymentId) {
+      removedPayment = await Payment.findByIdAndDelete(log.linkedPaymentId);
+    }
+
     if (changes.length > 0) {
       await logActivity({
         req,
@@ -729,7 +752,17 @@ app.post('/api/activity-logs/:id/undo', auth, async (req, res) => {
       });
     }
 
-    res.json({ success: true, data: updated });
+    if (removedPayment) {
+      await logActivity({
+        req,
+        action: 'Pending Dues Cleared',
+        entityType: 'Customer',
+        entityId: updated._id,
+        details: `Undo reversed: removed the auto-recorded PKR ${removedPayment.amount} "Pending Dues Cleared" payment for ${updated.name} (${updated.customerId}) - it no longer counts toward collected amount`
+      });
+    }
+
+    res.json({ success: true, data: updated, removedPayment });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

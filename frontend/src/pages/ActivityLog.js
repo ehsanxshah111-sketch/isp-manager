@@ -49,8 +49,12 @@ const ActivityLog = () => {
     const ok = window.confirm(`Undo this change?\n\n${summary}\n\nThis will be applied right away.`);
     if (!ok) return;
     try {
-      await API.post(`/activity-logs/${log._id}/undo`);
-      toast.success('Change undone');
+      const res = await API.post(`/activity-logs/${log._id}/undo`);
+      if (res.data?.removedPayment) {
+        toast.success(`Change undone - also removed the PKR ${res.data.removedPayment.amount} it had added to collected amount`);
+      } else {
+        toast.success('Change undone');
+      }
       loadLogs(true);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to undo this change');
