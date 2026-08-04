@@ -114,7 +114,25 @@ const MonthlyBillingSchema = new mongoose.Schema({
   totalDues: { type: Number, default: 0 },       // pendingDues total at close, before rollover
   totalRecovery: { type: Number, default: 0 },   // everything owed at close (dues + unpaid fee)
   totalCollected: { type: Number, default: 0 },  // payments received during [periodStart, periodEnd]
-  rolledOverCount: { type: Number, default: 0 }  // customers whose unpaid fee moved into dues
+  rolledOverCount: { type: Number, default: 0 }, // customers whose unpaid fee moved into dues
+  // Every customer's state at the moment this month was generated - so
+  // opening a past month always shows the exact same customer list and
+  // statuses it showed the day it was closed, not today's live roster.
+  customers: [{
+    customerId: String,
+    name: String,
+    package: String,
+    monthlyFee: Number,
+    paymentStatus: String,
+    pendingDues: Number,
+    status: String,
+    phone: String
+  }],
+  // Manual correction trail - a locked month can be edited later to fix a
+  // mistake, but every edit is logged here and in the activity log so
+  // there's always a record that it happened.
+  editedBy: { type: String, default: '' },
+  editedAt: { type: Date, default: null }
 }, { timestamps: true });
 
 // Reuse existing models on hot-reload / repeated invocation instead of
@@ -978,9 +996,24 @@ const computeBillingSnapshot = async (periodStart, periodEnd) => {
   ]);
   const totalCollected = collectedAgg[0]?.total || 0;
 
+  // Every customer's state right now, in the same shape stored on a
+  // generated bill - so the live preview and a locked month render with
+  // the exact same table.
+  const customerRows = customers.map((c) => ({
+    customerId: c.customerId,
+    name: c.name,
+    package: c.package || '',
+    monthlyFee: c.monthlyFee || 0,
+    paymentStatus: c.paymentStatus,
+    pendingDues: c.pendingDues || 0,
+    status: c.status,
+    phone: c.phone || ''
+  }));
+
   return {
     totalCustomers, activeCustomers, paidCount, unpaidCount,
-    totalRevenue, totalDues, totalRecovery, totalCollected, rolledOverCount
+    totalRevenue, totalDues, totalRecovery, totalCollected, rolledOverCount,
+    customerRows
   };
 };
 
@@ -1014,11 +1047,12 @@ app.get('/api/billing-preview/now', auth, async (req, res) => {
     const lastBill = await MonthlyBilling.findOne().sort({ periodEnd: -1 });
     const periodStart = lastBill ? lastBill.periodEnd : new Date(0);
     const periodEnd = new Date();
-    const snapshot = await computeBillingSnapshot(periodStart, periodEnd);
+    const { customerRows, ...snapshot } = await computeBillingSnapshot(periodStart, periodEnd);
     res.json({
       success: true,
       data: {
         ...snapshot,
+        customers: customerRows,
         periodStart,
         periodEnd,
         lastGeneratedMonth: lastBill ? { monthKey: lastBill.monthKey, monthLabel: lastBill.monthLabel } : null
@@ -1050,7 +1084,7 @@ app.post('/api/billing/generate', auth, async (req, res) => {
     const periodStart = lastBill ? lastBill.periodEnd : new Date(0);
     const periodEnd = new Date();
 
-    const snapshot = await computeBillingSnapshot(periodStart, periodEnd);
+    const { customerRows, ...snapshot } = await computeBillingSnapshot(periodStart, periodEnd);
 
     // Roll the fee forward for anyone Active and still Unpaid, and start a
     // fresh cycle for everyone else Active (so a Paid customer isn't left
@@ -1086,7 +1120,8 @@ app.post('/api/billing/generate', auth, async (req, res) => {
       generatedBy: req.username || 'Unknown',
       periodStart,
       periodEnd,
-      ...snapshot
+      ...snapshot,
+      customers: customerRows
     });
 
     await logActivity({
@@ -1100,6 +1135,72 @@ app.post('/api/billing/generate', auth, async (req, res) => {
     });
 
     res.status(201).json({ success: true, data: bill });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @desc  Correct a mistake in an already-generated (locked) month. A bill
+//        is normally never touched again after generation, but real
+//        mistakes happen (a payment recorded under the wrong month, a
+//        status typed wrong before it was locked, etc.), so this lets an
+//        admin fix it directly instead of the numbers being stuck wrong
+//        forever. Every edit is timestamped on the bill itself and written
+//        to the activity log, so there's always a record that a locked
+//        month was changed and by whom.
+app.put('/api/billing/:monthKey', auth, async (req, res) => {
+  try {
+    const bill = await MonthlyBilling.findOne({ monthKey: req.params.monthKey });
+    if (!bill) return res.status(404).json({ success: false, message: 'No bill generated for that month yet' });
+
+    const editableAggregateFields = [
+      'totalCustomers', 'activeCustomers', 'paidCount', 'unpaidCount',
+      'totalRevenue', 'totalDues', 'totalRecovery', 'totalCollected', 'rolledOverCount'
+    ];
+    const update = {};
+    editableAggregateFields.forEach((field) => {
+      if (req.body[field] !== undefined && req.body[field] !== null && req.body[field] !== '') {
+        const num = Number(req.body[field]);
+        if (!Number.isNaN(num)) update[field] = num;
+      }
+    });
+
+    if (Array.isArray(req.body.customers)) {
+      update.customers = req.body.customers.map((c) => ({
+        customerId: c.customerId,
+        name: c.name,
+        package: c.package || '',
+        monthlyFee: Number(c.monthlyFee) || 0,
+        paymentStatus: c.paymentStatus,
+        pendingDues: Number(c.pendingDues) || 0,
+        status: c.status,
+        phone: c.phone || ''
+      }));
+    }
+
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ success: false, message: 'Nothing to update' });
+    }
+
+    update.editedBy = req.username || 'Unknown';
+    update.editedAt = new Date();
+
+    const updated = await MonthlyBilling.findOneAndUpdate(
+      { monthKey: req.params.monthKey },
+      update,
+      { new: true }
+    );
+
+    await logActivity({
+      req,
+      action: 'Monthly Bill Edited',
+      module: 'System',
+      entityType: 'MonthlyBilling',
+      entityId: updated._id,
+      details: `Corrected the locked bill for ${updated.monthLabel}`
+    });
+
+    res.json({ success: true, data: updated });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
