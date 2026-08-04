@@ -1333,9 +1333,12 @@ app.get('/api/dashboard', auth, async (req, res) => {
     const collectedPeriodStart = lastBillForCollected ? lastBillForCollected.periodEnd : new Date(0);
     const collected = await computePeriodCollected(collectedPeriodStart, new Date());
 
-    const pendingCollection = customers
-      .filter(c => c.paymentStatus === 'Unpaid')
-      .reduce((sum, c) => sum + (c.monthlyFee || 0), 0);
+    // Pending Collection = Total Recovery - Collected. What's still owed,
+    // minus what's already come in. Previously this was calculated
+    // separately (just summing monthly fees of Unpaid customers), which
+    // ignored pendingDues and Collected entirely and could drift away from
+    // Total Recovery/Collected instead of always being consistent with them.
+    const pendingCollection = totalRecovery - collected;
 
     const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
     const netProfit = totalRevenue - totalExpenses;
