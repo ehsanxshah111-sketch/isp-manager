@@ -86,11 +86,15 @@ const ActivityLogSchema = new mongoose.Schema({
     from: mongoose.Schema.Types.Mixed,
     to: mongoose.Schema.Types.Mixed
   }],
-  // If this "Customer Updated" entry auto-created a "Pending Dues Cleared"
-  // Payment (because pendingDues was lowered), this points at that Payment.
-  // Undo uses it to delete the payment too, so an accidental dues edit
-  // doesn't leave stray money sitting in "collected" after the undo.
+  // If this "Customer Updated" entry auto-created one or more Payment
+  // records (a "Pending Dues Cleared" payment when dues were lowered, a
+  // "Monthly Fee" payment when marked Paid, or both at once), this points
+  // at them. Undo uses this to delete every linked payment too, so an
+  // accidental edit doesn't leave stray money sitting in "collected" after
+  // the undo. linkedPaymentId is kept for older entries written before
+  // linkedPaymentIds existed; new entries populate both.
   linkedPaymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: null },
+  linkedPaymentIds: { type: [mongoose.Schema.Types.ObjectId], ref: 'Payment', default: [] },
   details: { type: String, default: '' },            // human-readable one-line summary
   ip: { type: String, default: '' }
 }, { timestamps: true });
@@ -114,7 +118,25 @@ const MonthlyBillingSchema = new mongoose.Schema({
   totalDues: { type: Number, default: 0 },       // pendingDues total at close, before rollover
   totalRecovery: { type: Number, default: 0 },   // everything owed at close (dues + unpaid fee)
   totalCollected: { type: Number, default: 0 },  // payments received during [periodStart, periodEnd]
-  rolledOverCount: { type: Number, default: 0 }  // customers whose unpaid fee moved into dues
+  rolledOverCount: { type: Number, default: 0 }, // customers whose unpaid fee moved into dues
+  // Every customer's state at the moment this month was generated - so
+  // opening a past month always shows the exact same customer list and
+  // statuses it showed the day it was closed, not today's live roster.
+  customers: [{
+    customerId: String,
+    name: String,
+    package: String,
+    monthlyFee: Number,
+    paymentStatus: String,
+    pendingDues: Number,
+    status: String,
+    phone: String
+  }],
+  // Manual correction trail - a locked month can be edited later to fix a
+  // mistake, but every edit is logged here and in the activity log so
+  // there's always a record that it happened.
+  editedBy: { type: String, default: '' },
+  editedAt: { type: Date, default: null }
 }, { timestamps: true });
 
 // Reuse existing models on hot-reload / repeated invocation instead of
@@ -187,8 +209,9 @@ const auth = async (req, res, next) => {
 
 // Records one audit-trail entry. Never throws into the caller - a logging
 // hiccup should never block the actual customer change from saving.
-const logActivity = async ({ req, action, module = 'Customers', entityType = '', entityId = null, changes = [], details = '', linkedPaymentId = null }) => {
+const logActivity = async ({ req, action, module = 'Customers', entityType = '', entityId = null, changes = [], details = '', linkedPaymentId = null, linkedPaymentIds = [] }) => {
   try {
+    const allIds = linkedPaymentIds.length > 0 ? linkedPaymentIds : (linkedPaymentId ? [linkedPaymentId] : []);
     await ActivityLog.create({
       user: req.username || 'Unknown',
       userId: req.userId,
@@ -198,7 +221,8 @@ const logActivity = async ({ req, action, module = 'Customers', entityType = '',
       entityId,
       changes,
       details,
-      linkedPaymentId,
+      linkedPaymentId: allIds[0] || null,
+      linkedPaymentIds: allIds,
       ip: req.headers['x-forwarded-for'] || req.socket?.remoteAddress || ''
     });
   } catch (e) {
@@ -503,9 +527,9 @@ app.put('/api/customers/:id', auth, async (req, res) => {
 
     const customer = await Customer.findByIdAndUpdate(req.params.id, req.body, { new: true });
 
-    // Create the auto-payment BEFORE logging "Customer Updated" so that log
-    // entry can point at it. That link is what lets Undo clean up the
-    // payment too, instead of leaving it stuck in "collected" forever.
+    // Create the auto-payment(s) BEFORE logging "Customer Updated" so that
+    // log entry can point at them. That link is what lets Undo clean them
+    // up too, instead of leaving them stuck in "collected" forever.
     let duesPayment = null;
     if (duesClearedAmount > 0) {
       const receiptNumber = `RCPT-DUES-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -520,6 +544,35 @@ app.put('/api/customers/:id', auth, async (req, res) => {
       });
     }
 
+    // Marking someone Paid (or 1 YEAR ADVANCED - which here just means "this
+    // month's bill is cut", same monthlyFee amount, not a lump annual sum)
+    // is a real cash collection event too, exactly like clearing dues above
+    // - without this, the monthly fee never became an actual dated Payment
+    // record, so it silently never counted toward Monthly Bills' "Total
+    // Collected" (which only sums real Payment records by date) even though
+    // the Dashboard's live "Collected" figure did count it - that mismatch
+    // between the two pages is the bug this fixes. Only fires on a genuine
+    // Unpaid -> Paid/1 YEAR ADVANCED transition, never if it was already
+    // marked that way.
+    let feePayment = null;
+    const oldPaymentStatus = existing.paymentStatus;
+    const newPaymentStatus = customer.paymentStatus;
+    const justSettled = newPaymentStatus === 'Paid' || newPaymentStatus === '1 YEAR ADVANCED';
+    if ('paymentStatus' in req.body && oldPaymentStatus === 'Unpaid' && justSettled) {
+      const receiptNumber = `RCPT-FEE-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      feePayment = await Payment.create({
+        receiptNumber,
+        customerId: customer.customerId,
+        customerName: customer.name,
+        amount: customer.monthlyFee || 0,
+        billingMonth: 'Monthly Fee',
+        method: req.body.paymentMethod || 'Cash',
+        notes: `Auto-recorded: marked ${newPaymentStatus} for this billing cycle`
+      });
+    }
+
+    const linkedPaymentIds = [duesPayment, feePayment].filter(Boolean).map((p) => p._id);
+
     if (changes.length > 0) {
       await logActivity({
         req,
@@ -528,7 +581,7 @@ app.put('/api/customers/:id', auth, async (req, res) => {
         entityId: customer._id,
         changes,
         details: `Updated ${customer.name} (${customer.customerId}): ${formatChanges(changes)}`,
-        linkedPaymentId: duesPayment ? duesPayment._id : null
+        linkedPaymentIds
       });
     }
 
@@ -538,17 +591,21 @@ app.put('/api/customers/:id', auth, async (req, res) => {
         action: 'Pending Dues Cleared',
         entityType: 'Customer',
         entityId: customer._id,
-        // Give this its own undoable change (separate from the
-        // "Customer Updated" entry above) so the Undo button shows up
-        // right here too - this is the entry admins actually look for
-        // when they realize a dues-clearing was a mistake.
-        changes: [{ field: 'pendingDues', from: oldPendingDues, to: customer.pendingDues || 0 }],
-        linkedPaymentId: duesPayment._id,
         details: `PKR ${duesClearedAmount} of pending dues cleared for ${customer.name} (${customer.customerId}) - added to collected amount, removed from pending dues`
       });
     }
 
-    res.json({ success: true, data: customer, duesPayment });
+    if (feePayment) {
+      await logActivity({
+        req,
+        action: 'Monthly Fee Collected',
+        entityType: 'Customer',
+        entityId: customer._id,
+        details: `PKR ${feePayment.amount} monthly fee collected from ${customer.name} (${customer.customerId})`
+      });
+    }
+
+    res.json({ success: true, data: customer, duesPayment, feePayment });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -718,7 +775,7 @@ app.post('/api/activity-logs/:id/undo', auth, async (req, res) => {
   try {
     const log = await ActivityLog.findById(req.params.id);
     if (!log) return res.status(404).json({ success: false, message: 'Log entry not found' });
-    if (!['Customer Updated', 'Pending Dues Cleared'].includes(log.action) || !log.changes || log.changes.length === 0) {
+    if (log.action !== 'Customer Updated' || !log.changes || log.changes.length === 0) {
       return res.status(400).json({ success: false, message: 'This entry has nothing that can be undone' });
     }
 
@@ -736,16 +793,21 @@ app.post('/api/activity-logs/:id/undo', auth, async (req, res) => {
     const changes = diffCustomerFields(customer, revertBody);
     const updated = await Customer.findByIdAndUpdate(log.entityId, revertBody, { new: true });
 
-    // If this update had auto-recorded a "Pending Dues Cleared" payment
-    // (pendingDues got lowered, on purpose or by mistake), undoing the
-    // pendingDues field back is not enough on its own - that payment is
+    // If this update had auto-recorded one or more payments (a "Pending Dues
+    // Cleared" payment because pendingDues got lowered, and/or a "Monthly
+    // Fee" payment because the customer got marked Paid), undoing the
+    // customer's fields back is not enough on its own - those payments are
     // still sitting in the Payments collection and still counted in
-    // "Total Collected" on the dashboard. Remove it too so the undo is
-    // actually complete.
-    let removedPayment = null;
-    if (log.linkedPaymentId) {
-      removedPayment = await Payment.findByIdAndDelete(log.linkedPaymentId);
+    // "Total Collected". Remove all of them so the undo is actually complete.
+    const idsToRemove = log.linkedPaymentIds && log.linkedPaymentIds.length > 0
+      ? log.linkedPaymentIds
+      : (log.linkedPaymentId ? [log.linkedPaymentId] : []);
+    const removedPayments = [];
+    for (const paymentId of idsToRemove) {
+      const removed = await Payment.findByIdAndDelete(paymentId);
+      if (removed) removedPayments.push(removed);
     }
+    const removedPayment = removedPayments[0] || null; // kept for backward-compat response shape
 
     if (changes.length > 0) {
       await logActivity({
@@ -758,17 +820,17 @@ app.post('/api/activity-logs/:id/undo', auth, async (req, res) => {
       });
     }
 
-    if (removedPayment) {
+    for (const removed of removedPayments) {
       await logActivity({
         req,
-        action: 'Pending Dues Cleared',
+        action: removed.billingMonth === 'Monthly Fee' ? 'Monthly Fee Collected' : 'Pending Dues Cleared',
         entityType: 'Customer',
         entityId: updated._id,
-        details: `Undo reversed: removed the auto-recorded PKR ${removedPayment.amount} "Pending Dues Cleared" payment for ${updated.name} (${updated.customerId}) - it no longer counts toward collected amount`
+        details: `Undo reversed: removed the auto-recorded PKR ${removed.amount} "${removed.billingMonth}" payment for ${updated.name} (${updated.customerId}) - it no longer counts toward collected amount`
       });
     }
 
-    res.json({ success: true, data: updated, removedPayment });
+    res.json({ success: true, data: updated, removedPayment, removedPayments });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -819,11 +881,20 @@ app.get('/api/payments/summary', auth, async (req, res) => {
       Payment.countDocuments({ date: { $gte: monthStart } })
     ]);
 
+    // Same "since the last generated bill" window Dashboard and Monthly
+    // Bills use for their "Collected" figure, so this page can be checked
+    // against those two and always agree - a fresh "mark Paid" or dues
+    // payment shows up here too, not just on the other two pages.
+    const lastBill = await MonthlyBilling.findOne().sort({ periodEnd: -1 });
+    const cyclePeriodStart = lastBill ? lastBill.periodEnd : new Date(0);
+    const collectedThisCycle = await computePeriodCollected(cyclePeriodStart, new Date());
+
     res.json({
       success: true,
       data: {
         totalCollected: allAgg[0]?.total || 0,
         monthlyCollection: monthAgg[0]?.total || 0,
+        collectedThisCycle,
         totalTransactions,
         monthlyTransactions
       }
@@ -960,6 +1031,19 @@ app.delete('/api/expenses/:id', auth, async (req, res) => {
 // Shared by both the live preview and the real generate action, so the
 // numbers a user sees in the preview are exactly what generating would
 // lock in.
+// Real cash collected in a date range, straight from the Payment
+// collection (every Payment doc has a date and an amount - this simply
+// sums them). Shared by the Dashboard's "Collected" figure and Monthly
+// Billing's "Total Collected" so the two pages can never show different
+// numbers for the same period - they now both call this exact function.
+const computePeriodCollected = async (periodStart, periodEnd) => {
+  const agg = await Payment.aggregate([
+    { $match: { date: { $gte: periodStart, $lte: periodEnd } } },
+    { $group: { _id: null, total: { $sum: '$amount' } } }
+  ]);
+  return agg[0]?.total || 0;
+};
+
 const computeBillingSnapshot = async (periodStart, periodEnd) => {
   const customers = await Customer.find();
   const totalCustomers = customers.length;
@@ -978,15 +1062,26 @@ const computeBillingSnapshot = async (periodStart, periodEnd) => {
 
   const rolledOverCount = customers.filter((c) => c.status === 'Active' && c.paymentStatus === 'Unpaid').length;
 
-  const collectedAgg = await Payment.aggregate([
-    { $match: { date: { $gte: periodStart, $lte: periodEnd } } },
-    { $group: { _id: null, total: { $sum: '$amount' } } }
-  ]);
-  const totalCollected = collectedAgg[0]?.total || 0;
+  const totalCollected = await computePeriodCollected(periodStart, periodEnd);
+
+  // Every customer's state right now, in the same shape stored on a
+  // generated bill - so the live preview and a locked month render with
+  // the exact same table.
+  const customerRows = customers.map((c) => ({
+    customerId: c.customerId,
+    name: c.name,
+    package: c.package || '',
+    monthlyFee: c.monthlyFee || 0,
+    paymentStatus: c.paymentStatus,
+    pendingDues: c.pendingDues || 0,
+    status: c.status,
+    phone: c.phone || ''
+  }));
 
   return {
     totalCustomers, activeCustomers, paidCount, unpaidCount,
-    totalRevenue, totalDues, totalRecovery, totalCollected, rolledOverCount
+    totalRevenue, totalDues, totalRecovery, totalCollected, rolledOverCount,
+    customerRows
   };
 };
 
@@ -1020,11 +1115,12 @@ app.get('/api/billing-preview/now', auth, async (req, res) => {
     const lastBill = await MonthlyBilling.findOne().sort({ periodEnd: -1 });
     const periodStart = lastBill ? lastBill.periodEnd : new Date(0);
     const periodEnd = new Date();
-    const snapshot = await computeBillingSnapshot(periodStart, periodEnd);
+    const { customerRows, ...snapshot } = await computeBillingSnapshot(periodStart, periodEnd);
     res.json({
       success: true,
       data: {
         ...snapshot,
+        customers: customerRows,
         periodStart,
         periodEnd,
         lastGeneratedMonth: lastBill ? { monthKey: lastBill.monthKey, monthLabel: lastBill.monthLabel } : null
@@ -1056,7 +1152,7 @@ app.post('/api/billing/generate', auth, async (req, res) => {
     const periodStart = lastBill ? lastBill.periodEnd : new Date(0);
     const periodEnd = new Date();
 
-    const snapshot = await computeBillingSnapshot(periodStart, periodEnd);
+    const { customerRows, ...snapshot } = await computeBillingSnapshot(periodStart, periodEnd);
 
     // Roll the fee forward for anyone Active and still Unpaid, and start a
     // fresh cycle for everyone else Active (so a Paid customer isn't left
@@ -1092,7 +1188,8 @@ app.post('/api/billing/generate', auth, async (req, res) => {
       generatedBy: req.username || 'Unknown',
       periodStart,
       periodEnd,
-      ...snapshot
+      ...snapshot,
+      customers: customerRows
     });
 
     await logActivity({
@@ -1106,6 +1203,72 @@ app.post('/api/billing/generate', auth, async (req, res) => {
     });
 
     res.status(201).json({ success: true, data: bill });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @desc  Correct a mistake in an already-generated (locked) month. A bill
+//        is normally never touched again after generation, but real
+//        mistakes happen (a payment recorded under the wrong month, a
+//        status typed wrong before it was locked, etc.), so this lets an
+//        admin fix it directly instead of the numbers being stuck wrong
+//        forever. Every edit is timestamped on the bill itself and written
+//        to the activity log, so there's always a record that a locked
+//        month was changed and by whom.
+app.put('/api/billing/:monthKey', auth, async (req, res) => {
+  try {
+    const bill = await MonthlyBilling.findOne({ monthKey: req.params.monthKey });
+    if (!bill) return res.status(404).json({ success: false, message: 'No bill generated for that month yet' });
+
+    const editableAggregateFields = [
+      'totalCustomers', 'activeCustomers', 'paidCount', 'unpaidCount',
+      'totalRevenue', 'totalDues', 'totalRecovery', 'totalCollected', 'rolledOverCount'
+    ];
+    const update = {};
+    editableAggregateFields.forEach((field) => {
+      if (req.body[field] !== undefined && req.body[field] !== null && req.body[field] !== '') {
+        const num = Number(req.body[field]);
+        if (!Number.isNaN(num)) update[field] = num;
+      }
+    });
+
+    if (Array.isArray(req.body.customers)) {
+      update.customers = req.body.customers.map((c) => ({
+        customerId: c.customerId,
+        name: c.name,
+        package: c.package || '',
+        monthlyFee: Number(c.monthlyFee) || 0,
+        paymentStatus: c.paymentStatus,
+        pendingDues: Number(c.pendingDues) || 0,
+        status: c.status,
+        phone: c.phone || ''
+      }));
+    }
+
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ success: false, message: 'Nothing to update' });
+    }
+
+    update.editedBy = req.username || 'Unknown';
+    update.editedAt = new Date();
+
+    const updated = await MonthlyBilling.findOneAndUpdate(
+      { monthKey: req.params.monthKey },
+      update,
+      { new: true }
+    );
+
+    await logActivity({
+      req,
+      action: 'Monthly Bill Edited',
+      module: 'System',
+      entityType: 'MonthlyBilling',
+      entityId: updated._id,
+      details: `Corrected the locked bill for ${updated.monthLabel}`
+    });
+
+    res.json({ success: true, data: updated });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -1158,19 +1321,18 @@ app.get('/api/dashboard', auth, async (req, res) => {
     const cutOffDues = customers
       .filter(c => c.status !== 'Active')
       .reduce((sum, c) => sum + amountOwed(c), 0);
-    // Cleared pending dues are real cash collected too, not just a Paid
-    // customer's monthly fee - so on top of the Paid/1 YEAR ADVANCED fee
-    // total below, add every Payment that was auto-recorded when someone's
-    // pendingDues got reduced (see PUT /api/customers/:id above).
-    const duesClearedAgg = await Payment.aggregate([
-      { $match: { billingMonth: 'Pending Dues Cleared' } },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
-    ]);
-    const duesClearedTotal = duesClearedAgg[0]?.total || 0;
+    // "Collected" = real cash that's actually come in since the last
+    // Monthly Bill was generated (or ever, if none has been yet) - the
+    // exact same period and the exact same Payment records Monthly Bills'
+    // live preview uses, so this figure and that one are now always
+    // identical instead of drifting apart. Every monthly-fee payment and
+    // every dues-cleared payment is a real, dated Payment record (see
+    // PUT /api/customers/:id above), so this simple date-range sum already
+    // captures both - no separate live-status guess needed.
+    const lastBillForCollected = await MonthlyBilling.findOne().sort({ periodEnd: -1 });
+    const collectedPeriodStart = lastBillForCollected ? lastBillForCollected.periodEnd : new Date(0);
+    const collected = await computePeriodCollected(collectedPeriodStart, new Date());
 
-    const collected = customers
-      .filter(c => c.paymentStatus === 'Paid' || c.paymentStatus === '1 YEAR ADVANCED')
-      .reduce((sum, c) => sum + (c.monthlyFee || 0), 0) + duesClearedTotal;
     const pendingCollection = customers
       .filter(c => c.paymentStatus === 'Unpaid')
       .reduce((sum, c) => sum + (c.monthlyFee || 0), 0);

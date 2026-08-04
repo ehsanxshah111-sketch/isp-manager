@@ -159,7 +159,11 @@ const Payments = () => {
       {summary && (
         <div className="stats-grid">
           <div className="stat-card">
-            <div className="stat-label">Total Collected</div>
+            <div className="stat-label">Collected This Billing Cycle</div>
+            <div className="stat-value value-green">PKR {summary.collectedThisCycle?.toLocaleString() || 0}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Total Collected (All Time)</div>
             <div className="stat-value value-green">PKR {summary.totalCollected?.toLocaleString() || 0}</div>
           </div>
           <div className="stat-card">
