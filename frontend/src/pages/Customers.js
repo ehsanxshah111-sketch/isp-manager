@@ -178,8 +178,15 @@ const Customers = () => {
     try {
       if (editingCustomer) {
         const res = await API.put(`/customers/${editingCustomer._id}`, formData);
-        if (res.data.duesPayment) {
-          toast.success(`Customer updated - PKR ${res.data.duesPayment.amount.toLocaleString()} of dues cleared and added to Collected.`);
+        const { duesPayment, feePayment } = res.data;
+        if (duesPayment && feePayment) {
+          toast.success(
+            `Customer updated - PKR ${feePayment.amount.toLocaleString()} fee + PKR ${duesPayment.amount.toLocaleString()} dues cleared, both added to Collected.`
+          );
+        } else if (feePayment) {
+          toast.success(`Customer updated - PKR ${feePayment.amount.toLocaleString()} added to Collected.`);
+        } else if (duesPayment) {
+          toast.success(`Customer updated - PKR ${duesPayment.amount.toLocaleString()} of dues cleared and added to Collected.`);
         } else {
           toast.success('Customer updated successfully!');
         }
