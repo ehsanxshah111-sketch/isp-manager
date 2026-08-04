@@ -1052,7 +1052,7 @@ const computeBillingSnapshot = async (periodStart, periodEnd) => {
   const unpaidCount = customers.filter((c) => c.paymentStatus === 'Unpaid').length;
 
   const totalRevenue = customers
-    .filter((c) => c.status === 'Active')
+    .filter((c) => c.status === 'Active' && c.paymentStatus !== 'FREE')
     .reduce((sum, c) => sum + (c.monthlyFee || 0), 0);
   const totalDues = customers.reduce((sum, c) => sum + (c.pendingDues || 0), 0);
 
@@ -1297,9 +1297,10 @@ app.get('/api/dashboard', auth, async (req, res) => {
     // The instant a customer is Cut Off or Disabled, their monthly fee drops
     // out of this figure (and out of Net Profit, since that's derived from
     // this) - that's the "cut" the client wants to see when someone is
-    // disabled.
+    // disabled. FREE customers are excluded too - they never actually pay,
+    // so their fee shouldn't inflate Revenue or Profit.
     const totalRevenue = customers
-      .filter(c => c.status === 'Active')
+      .filter(c => c.status === 'Active' && c.paymentStatus !== 'FREE')
       .reduce((sum, c) => sum + (c.monthlyFee || 0), 0);
     const totalDues = customers.reduce((sum, c) => sum + (c.pendingDues || 0), 0);
 
