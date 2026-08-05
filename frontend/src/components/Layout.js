@@ -175,7 +175,6 @@ const Layout = () => {
   const menuItems = [
     { path: '/dashboard', icon: '📊', label: 'Dashboard' },
     { path: '/customers', icon: '👥', label: 'Customers' },
-    { path: '/packages', icon: '📦', label: 'Packages' },
     { path: '/billing', icon: '🧾', label: 'Monthly Bills' },
     { path: '/payments', icon: '💳', label: 'Payments' },
     { path: '/expenses', icon: '💰', label: 'Expenses' },

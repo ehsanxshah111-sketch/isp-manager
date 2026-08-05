@@ -25,10 +25,10 @@
 }
 
 .sidebar-brand {
-  padding: 20px;
+  padding: 16px 14px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 
@@ -37,20 +37,22 @@
 }
 
 .brand-icon-img {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   object-fit: contain;
   border-radius: 8px;
   flex-shrink: 0;
 }
 
 .brand-text {
-  font-size: 16px;
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
   font-weight: 800;
-  letter-spacing: 0.4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  letter-spacing: 0.2px;
+  line-height: 1.25;
+  white-space: normal;
+  word-break: break-word;
   background: linear-gradient(90deg, #d4af37, #f0d878 45%, #d4af37);
   -webkit-background-clip: text;
   background-clip: text;

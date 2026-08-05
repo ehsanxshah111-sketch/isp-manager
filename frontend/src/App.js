@@ -5,7 +5,6 @@ import { AuthProvider } from './context/AuthContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Customers from './pages/Customers';
-import Packages from './pages/Packages';
 import MonthlyBilling from './pages/MonthlyBilling';
 import Payments from './pages/Payments';
 import Expenses from './pages/Expenses';
@@ -47,7 +46,6 @@ function App() {
             <Route index element={<Navigate to="/dashboard" />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="customers" element={<Customers />} />
-            <Route path="packages" element={<Packages />} />
             <Route path="billing" element={<MonthlyBilling />} />
             <Route path="payments" element={<Payments />} />
             <Route path="expenses" element={<Expenses />} />
