@@ -242,6 +242,13 @@ const Customers = () => {
   // going Unpaid -> Paid, and still shows up in Change History with Undo.
   const quickSetPaymentStatus = async (customer, newStatus) => {
     if (customer.paymentStatus === newStatus || quickUpdatingId) return;
+
+    const willBePaid = newStatus === 'Paid';
+    const confirmMessage = willBePaid
+      ? `Mark ${customer.name} (${customer.customerId}) as PAID?\n\nThis adds PKR ${Number(customer.monthlyFee || 0).toLocaleString()} to Collected.`
+      : `Mark ${customer.name} (${customer.customerId}) as UNPAID?`;
+    if (!window.confirm(confirmMessage)) return;
+
     setQuickUpdatingId(customer._id);
     try {
       const res = await API.put(`/customers/${customer._id}`, { paymentStatus: newStatus });
