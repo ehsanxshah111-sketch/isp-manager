@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
 import { consumePendingCustomerTarget, subscribeCustomerTarget } from '../utils/voiceBus';
@@ -39,6 +40,8 @@ const Customers = () => {
   });
 
   const customersRef = useRef([]);
+  const routerLocation = useLocation();
+  const routerNavigate = useNavigate();
 
   const matchPendingTarget = (list, target) =>
     list.find(
@@ -55,6 +58,23 @@ const Customers = () => {
   useEffect(() => {
     customersRef.current = customers;
   }, [customers]);
+
+  // Arriving here via the header search box (state.search) or a dashboard
+  // quick action (state.openAdd) - apply it once, then clear the navigation
+  // state so refreshing this page (or coming back later) doesn't re-trigger
+  // the same search term or re-open the Add modal.
+  useEffect(() => {
+    if (routerLocation.state?.search) {
+      setSearch(routerLocation.state.search);
+    }
+    if (routerLocation.state?.openAdd) {
+      openAddModal();
+    }
+    if (routerLocation.state?.search || routerLocation.state?.openAdd) {
+      routerNavigate(routerLocation.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routerLocation.state]);
 
   // Handles a voice command like "open Ali" said while ALREADY on this page.
   // Navigating to the same route never remounts it, so the mount effect

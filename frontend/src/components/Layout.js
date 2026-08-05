@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
 import VoiceController from './VoiceController';
+import HeaderSearch from './HeaderSearch';
 import { subscribeBannerText } from '../utils/bannerBus';
 import { LOGO_DATA_URI } from '../assets/logoData';
 import './Layout.css';
@@ -174,6 +175,7 @@ const Layout = () => {
   const menuItems = [
     { path: '/dashboard', icon: '📊', label: 'Dashboard' },
     { path: '/customers', icon: '👥', label: 'Customers' },
+    { path: '/packages', icon: '📦', label: 'Packages' },
     { path: '/billing', icon: '🧾', label: 'Monthly Bills' },
     { path: '/payments', icon: '💳', label: 'Payments' },
     { path: '/expenses', icon: '💰', label: 'Expenses' },
@@ -282,6 +284,8 @@ const Layout = () => {
           </button>
 
           <h1>{menuItems.find(item => item.path === location.pathname)?.label || 'Dashboard'}</h1>
+
+          <HeaderSearch />
 
           <div className="header-banner-wrap">
             <span className="header-banner-icon" aria-hidden="true">🌐</span>

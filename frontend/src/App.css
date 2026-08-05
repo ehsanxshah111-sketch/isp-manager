@@ -374,6 +374,81 @@ html.dark-mode .chart-section h3 {
   color: #e6edf3;
 }
 
+.chart-subtitle {
+  font-size: 12px;
+  font-weight: 400;
+  color: #6b7f99;
+  margin-left: 8px;
+}
+
+/* ========================================
+   QUICK ACTIONS
+   ======================================== */
+
+.quick-actions-section {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid #e9eef4;
+  margin-bottom: 24px;
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+html.dark-mode .quick-actions-section {
+  background: #161b22;
+  border-color: #30363d;
+}
+
+.quick-actions-section h3 {
+  font-size: 16px;
+  margin-bottom: 16px;
+  color: #1a2a3a;
+}
+
+html.dark-mode .quick-actions-section h3 {
+  color: #e6edf3;
+}
+
+.quick-actions-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.quick-action-btn {
+  padding: 12px 20px;
+  background: #2a7de1;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.quick-action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(42, 125, 225, 0.3);
+}
+
+.quick-action-btn:nth-child(2) {
+  background: #16a34a;
+}
+
+.quick-action-btn:nth-child(2):hover {
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3);
+}
+
+@media (max-width: 600px) {
+  .quick-actions-row {
+    flex-direction: column;
+  }
+  .quick-action-btn {
+    width: 100%;
+  }
+}
+
 .chart-container {
   display: flex;
   align-items: flex-end;

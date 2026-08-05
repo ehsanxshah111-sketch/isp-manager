@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import API from '../utils/api';
 import toast from 'react-hot-toast';
 import { getPageCache, setPageCache } from '../utils/pageCache';
@@ -6,10 +7,12 @@ import RefreshButton from '../components/RefreshButton';
 
 const Dashboard = () => {
   const cached = getPageCache('dashboard');
+  const navigate = useNavigate();
   const [stats, setStats] = useState(cached?.stats || null);
   const [loading, setLoading] = useState(!cached);
   const [refreshing, setRefreshing] = useState(false);
   const [dailyData, setDailyData] = useState(cached?.dailyData || []);
+  const [revenueTrend, setRevenueTrend] = useState(cached?.revenueTrend || []);
   const [recentCustomers, setRecentCustomers] = useState(cached?.recentCustomers || []);
 
   useEffect(() => {
@@ -25,6 +28,7 @@ const Dashboard = () => {
       const data = res.data.data;
       setStats(data.stats);
       setDailyData(data.dailyData || []);
+      setRevenueTrend(data.revenueTrend || []);
       setRecentCustomers(data.recentCustomers || []);
       setPageCache('dashboard', data);
     } catch (error) {
@@ -63,6 +67,7 @@ const Dashboard = () => {
   const maxRevenue = Math.max(...dailyData.map(d => d.revenue), 1);
   const maxCount = Math.max(...dailyData.map(d => d.count), 1);
   const hasData = dailyData.some(d => d.count > 0 || d.revenue > 0);
+  const maxTrendRevenue = Math.max(...revenueTrend.map(t => t.revenue), 1);
 
   const getColorClass = (color) => {
     const classes = {
@@ -90,6 +95,49 @@ const Dashboard = () => {
             <div className={`stat-value ${getColorClass(card.color)}`}>{card.value}</div>
           </div>
         ))}
+      </div>
+
+      {/* Quick Actions */}
+      <div className="quick-actions-section">
+        <h3>Quick Actions</h3>
+        <div className="quick-actions-row">
+          <button
+            className="quick-action-btn"
+            onClick={() => navigate('/customers', { state: { openAdd: true } })}
+          >
+            ➕ Add New Customer
+          </button>
+          <button
+            className="quick-action-btn"
+            onClick={() => navigate('/billing')}
+          >
+            🧾 Generate Monthly Bills
+          </button>
+        </div>
+      </div>
+
+      {/* Revenue Trend (last 6 months) */}
+      <div className="chart-section">
+        <h3>Revenue Trend <span className="chart-subtitle">Last 6 months</span></h3>
+        {revenueTrend.length > 0 ? (
+          <div className="chart-container">
+            {revenueTrend.map((item, index) => (
+              <div key={index} className="chart-bar-wrapper">
+                <div className="chart-bar">
+                  <div
+                    className="bar-revenue"
+                    style={{ height: `${Math.max((item.revenue / maxTrendRevenue) * 140, 4)}px` }}
+                  />
+                </div>
+                <div className="chart-label">{item.month}</div>
+                <div className="chart-value">{item.revenue > 0 ? `${(item.revenue / 1000).toFixed(1)}k` : ''}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="no-data">Not enough billing history yet - generate a few monthly bills to see the trend</p>
+        )}
+        <div className="chart-legend">📈 Total Revenue by Month</div>
       </div>
 
       {/* Daily Revenue Chart */}

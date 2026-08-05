@@ -62,6 +62,18 @@ const ExpenseSchema = new mongoose.Schema({
   description: { type: String, default: '' }
 }, { timestamps: true });
 
+// Internet packages/plans (e.g. "Plan-1500" at PKR 1500) - a reusable price
+// list so a customer's package can be picked from here instead of typed
+// free-text every time. Purely a management convenience: a customer's own
+// monthlyFee field is still what billing actually uses, so editing a
+// package here does NOT retroactively change any existing customer's fee.
+const PackageSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },   // e.g. "Plan-1500"
+  price: { type: Number, required: true },
+  speed: { type: String, default: '' },                    // e.g. "10 Mbps" (optional)
+  description: { type: String, default: '' }
+}, { timestamps: true });
+
 // Single shared document (key: 'global') holding app-wide settings, e.g. the
 // sliding text shown in the header. Lives on the server (not localStorage) so
 // every admin/device sees the same banner.
@@ -145,6 +157,7 @@ const User = mongoose.models.User || mongoose.model('User', UserSchema);
 const Customer = mongoose.models.Customer || mongoose.model('Customer', CustomerSchema);
 const Payment = mongoose.models.Payment || mongoose.model('Payment', PaymentSchema);
 const Expense = mongoose.models.Expense || mongoose.model('Expense', ExpenseSchema);
+const Package = mongoose.models.Package || mongoose.model('Package', PackageSchema);
 const AppSetting = mongoose.models.AppSetting || mongoose.model('AppSetting', AppSettingSchema);
 const ActivityLog = mongoose.models.ActivityLog || mongoose.model('ActivityLog', ActivityLogSchema);
 const MonthlyBilling = mongoose.models.MonthlyBilling || mongoose.model('MonthlyBilling', MonthlyBillingSchema);
@@ -955,6 +968,54 @@ app.delete('/api/payments/:id', auth, async (req, res) => {
 });
 
 // =====================================================
+// PACKAGE ROUTES (internet plans price list)
+// =====================================================
+app.get('/api/packages', auth, async (req, res) => {
+  try {
+    const packages = await Package.find().sort({ price: 1 });
+    res.json({ success: true, data: packages });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.post('/api/packages', auth, async (req, res) => {
+  try {
+    const pkg = new Package(req.body);
+    await pkg.save();
+    res.status(201).json({ success: true, data: pkg });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ success: false, message: 'A package with that name already exists' });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.put('/api/packages/:id', auth, async (req, res) => {
+  try {
+    const pkg = await Package.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!pkg) return res.status(404).json({ success: false, message: 'Package not found' });
+    res.json({ success: true, data: pkg });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ success: false, message: 'A package with that name already exists' });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.delete('/api/packages/:id', auth, async (req, res) => {
+  try {
+    const pkg = await Package.findByIdAndDelete(req.params.id);
+    if (!pkg) return res.status(404).json({ success: false, message: 'Package not found' });
+    res.json({ success: true, message: 'Package deleted' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// =====================================================
 // EXPENSE ROUTES
 // =====================================================
 app.get('/api/expenses', auth, async (req, res) => {
@@ -1361,6 +1422,18 @@ app.get('/api/dashboard', auth, async (req, res) => {
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, 10);
 
+    // Revenue trend, last 6 months: each past generated bill already has its
+    // month's Total Revenue locked in forever (see MONTHLY BILLING ROUTES
+    // above), so this just reads the last 5 of those plus today's still-live
+    // number as the final point - no separate revenue-history tracking
+    // needed, and a past month here will never change even if today's live
+    // Total Revenue does.
+    const pastBills = await MonthlyBilling.find().sort({ periodEnd: -1 }).limit(5);
+    const revenueTrend = [
+      ...pastBills.reverse().map((b) => ({ month: b.monthLabel, revenue: b.totalRevenue })),
+      { month: 'This Month', revenue: totalRevenue }
+    ];
+
     res.json({
       success: true,
       data: {
@@ -1381,6 +1454,7 @@ app.get('/api/dashboard', auth, async (req, res) => {
           netProfit
         },
         dailyData,
+        revenueTrend,
         recentCustomers
       }
     });
