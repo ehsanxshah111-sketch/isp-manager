@@ -825,7 +825,28 @@ html.dark-mode .status-badge.customer-deleted {
   color: #dc3545;
 }
 
+.action-btn.paid-btn:hover {
+  color: #28a745;
+}
+
+.action-btn.unpaid-btn:hover {
+  color: #dc3545;
+}
+
+.action-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.action-btn:disabled:hover {
+  color: #6b7f99;
+}
+
 html.dark-mode .action-btn {
+  color: #8b949e;
+}
+
+html.dark-mode .action-btn:disabled:hover {
   color: #8b949e;
 }
 

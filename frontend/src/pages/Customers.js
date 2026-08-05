@@ -27,6 +27,7 @@ const Customers = () => {
   const [historyCustomer, setHistoryCustomer] = useState(null);
   const [historyLogs, setHistoryLogs] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [quickUpdatingId, setQuickUpdatingId] = useState(null); // customer._id currently being marked Paid/Unpaid via one-click
 
   const [formData, setFormData] = useState({
     name: '',
@@ -232,6 +233,30 @@ const Customers = () => {
     } catch (error) {
       toast.error('Failed to delete customer');
       console.error('Error:', error);
+    }
+  };
+
+  // One-click Paid/Unpaid toggle straight from the customer list - no need
+  // to open the Edit modal. Reuses the same update endpoint the edit form
+  // uses, so it still auto-records a "Monthly Fee Collected" payment when
+  // going Unpaid -> Paid, and still shows up in Change History with Undo.
+  const quickSetPaymentStatus = async (customer, newStatus) => {
+    if (customer.paymentStatus === newStatus || quickUpdatingId) return;
+    setQuickUpdatingId(customer._id);
+    try {
+      const res = await API.put(`/customers/${customer._id}`, { paymentStatus: newStatus });
+      const { feePayment } = res.data;
+      if (feePayment) {
+        toast.success(`${customer.name} marked Paid - PKR ${feePayment.amount.toLocaleString()} added to Collected.`);
+      } else {
+        toast.success(`${customer.name} marked ${newStatus}.`);
+      }
+      loadCustomers(true);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update payment status');
+      console.error('Error:', error);
+    } finally {
+      setQuickUpdatingId(null);
     }
   };
 
@@ -455,9 +480,18 @@ const Customers = () => {
     }).finally(() => setBulkSending(false));
   };
 
+  // If the search box holds a plain number (e.g. "1"), treat it as a
+  // billing-day filter - show only customers whose Day matches that number
+  // exactly, so recovery rounds for a given day are easy to pull up. Any
+  // non-numeric text keeps the normal name/Customer ID search.
+  const trimmedSearch = search.trim();
+  const isDaySearch = trimmedSearch !== '' && /^\d+$/.test(trimmedSearch);
+
   const filteredCustomers = customers.filter((c) => {
-    const matchesSearch = c.name.toLowerCase().includes(search.toLowerCase()) ||
-                          c.customerId.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = isDaySearch
+      ? parseFloat(c.connectionDate) === parseFloat(trimmedSearch)
+      : (c.name.toLowerCase().includes(search.toLowerCase()) ||
+         c.customerId.toLowerCase().includes(search.toLowerCase()));
     const matchesStatus = filterStatus === 'all' || c.status === filterStatus;
     const matchesPayment = filterPayment === 'all' || c.paymentStatus === filterPayment;
     return matchesSearch && matchesStatus && matchesPayment;
@@ -485,7 +519,7 @@ const Customers = () => {
       <div className="filter-bar">
         <input
           type="text"
-          placeholder="Search by name or ID..."
+          placeholder="Search by name/ID, or type a day (e.g. 1) to see that day's customers..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="filter-input"
@@ -571,6 +605,22 @@ const Customers = () => {
                     </span>
                   </td>
                   <td>
+                    <button
+                      className="action-btn paid-btn"
+                      onClick={() => quickSetPaymentStatus(c, 'Paid')}
+                      disabled={quickUpdatingId === c._id || c.paymentStatus === 'Paid'}
+                      title="Mark as Paid"
+                    >
+                      {quickUpdatingId === c._id ? '⏳' : '✅'}
+                    </button>
+                    <button
+                      className="action-btn unpaid-btn"
+                      onClick={() => quickSetPaymentStatus(c, 'Unpaid')}
+                      disabled={quickUpdatingId === c._id || c.paymentStatus === 'Unpaid'}
+                      title="Mark as Unpaid"
+                    >
+                      {quickUpdatingId === c._id ? '⏳' : '❌'}
+                    </button>
                     <button className="action-btn" onClick={() => openEditModal(c)}>✏️</button>
                     <button className="action-btn" onClick={() => openHistoryModal(c)} title="View change history">🕘</button>
                     <button className="action-btn delete-btn" onClick={() => handleDelete(c._id)}>🗑️</button>
