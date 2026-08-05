@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import VoiceController from './VoiceController';
 import HeaderSearch from './HeaderSearch';
 import { subscribeBannerText } from '../utils/bannerBus';
-import { LOGO_DATA_URI } from '../assets/logoData';
+import { LOGO_SIDEBAR_DATA_URI, LOGO_SIDEBAR_ICON_DATA_URI } from '../assets/logoData';
 import './Layout.css';
 
 const Layout = () => {
@@ -213,8 +213,8 @@ const Layout = () => {
       {/* Sidebar */}
       <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
         <div className="sidebar-brand">
-          <img src={LOGO_DATA_URI} alt="ISP Logo" className="brand-icon-img" />
-          <span className="brand-text">{user?.brandName || 'ZEEP BROAD BRAND'}</span>
+          <img src={LOGO_SIDEBAR_DATA_URI} alt="Zeep Broad Brand" className="brand-logo-full" />
+          <img src={LOGO_SIDEBAR_ICON_DATA_URI} alt="Zeep Broad Brand" className="brand-logo-icon" />
         </div>
         <nav className="sidebar-nav">
           {menuItems.map((item) => (

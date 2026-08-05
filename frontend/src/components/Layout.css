@@ -25,42 +25,44 @@
 }
 
 .sidebar-brand {
-  padding: 16px 14px;
+  padding: 14px 12px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
   border-bottom: 1px solid rgba(255,255,255,0.1);
+  min-height: 64px;
 }
 
 .brand-icon {
   font-size: 24px;
 }
 
-.brand-icon-img {
-  width: 32px;
-  height: 32px;
+/* Full logo (icon + "ZEEP BROAD BRAND" + tagline baked in) - shown when
+   the sidebar is expanded, sized to the sidebar's own width so nothing
+   is cropped or squeezed. */
+.brand-logo-full {
+  display: block;
+  width: 100%;
+  max-width: 210px;
+  height: auto;
   object-fit: contain;
-  border-radius: 8px;
-  flex-shrink: 0;
 }
 
-.brand-text {
-  flex: 1;
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: 0.2px;
-  line-height: 1.25;
-  white-space: normal;
-  word-break: break-word;
-  background: linear-gradient(90deg, #d4af37, #f0d878 45%, #d4af37);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.sidebar.closed .brand-text {
+/* Icon-only crop (no text) - shown only when the sidebar is collapsed
+   to its narrow 70px rail, where the full logo wouldn't fit anyway. */
+.brand-logo-icon {
   display: none;
+  width: 40px;
+  height: auto;
+  object-fit: contain;
+}
+
+.sidebar.closed .brand-logo-full {
+  display: none;
+}
+
+.sidebar.closed .brand-logo-icon {
+  display: block;
 }
 
 .sidebar-nav {

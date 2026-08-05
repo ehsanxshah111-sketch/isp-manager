@@ -1106,20 +1106,30 @@ html.dark-mode .login-box {
   margin-bottom: 16px;
 }
 
+/* The logo's icon/text is dark charcoal + black - fine on the login
+   box's light background by default, but dark mode's login box is
+   nearly black, which would make that text unreadable. Give it a
+   light backing panel only in dark mode so it stays legible either
+   way, without needing a second recolored image variant. */
+html.dark-mode .login-logo-glow {
+  background: rgba(247, 243, 234, 0.92);
+  border-radius: 18px;
+  padding: 14px 20px;
+}
+
 .login-icon {
   text-align: center;
   font-size: 48px;
   margin-bottom: 12px;
 }
 
-.login-icon-img {
+.login-logo-full {
   display: block;
-  width: 104px;
-  height: 104px;
+  width: 100%;
+  max-width: 300px;
+  height: auto;
   object-fit: contain;
-  border-radius: 20px;
-  padding: 10px;
-  background: radial-gradient(circle, rgba(212, 175, 55, 0.18), transparent 70%);
+  margin: 0 auto;
   filter: drop-shadow(0 6px 18px rgba(212, 175, 55, 0.35));
 }
 
@@ -1128,25 +1138,11 @@ html.dark-mode .login-box {
   font-size: 28px;
   font-weight: 800;
   letter-spacing: 0.5px;
-  margin: 0 0 2px 0;
+  margin: 12px 0 2px 0;
   background: linear-gradient(90deg, #b8912f, #e6c463 45%, #b8912f);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-}
-
-.login-brand-tag {
-  text-align: center;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: #8a7a4d;
-  margin: 0;
-}
-
-html.dark-mode .login-brand-tag {
-  color: #cbb46b;
 }
 
 .login-divider {

@@ -64,10 +64,9 @@ const Login = () => {
       <div className="login-container">
         <div className="login-box">
           <div className="login-logo-glow">
-            <img src={LOGO_DATA_URI} alt="ISP Logo" className="login-icon-img" />
+            <img src={LOGO_DATA_URI} alt="Zeep Broad Brand" className="login-logo-full" />
           </div>
           <h1 className="login-title">ISP Manager</h1>
-          <p className="login-brand-tag">Zeep Broad Brand</p>
           <div className="login-divider" />
           <p className="login-subtitle">Sign in to your account</p>
           <form onSubmit={handleSubmit}>
